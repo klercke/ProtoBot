@@ -19,7 +19,7 @@ from discord.ext import commands    #
                                         #
 bot = commands.Bot(command_prefix='!')  #
 TOKEN = os.getenv('DISCORD_TOKEN')      #
-VERSION = "a0.1"                        #
+VERSION = "v0.1-alpha"                  #
 ACTIVITY = discord.Game("!help")        #
                                         #
 #########################################
@@ -80,35 +80,6 @@ async def on_message(message):
 
         return 
 
-    if 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i am' in message.content.lower():
-        """
-        Lets the bot tell the famous "Hi x! I'm dad!" joke
-        """
-
-        user_message = message.content.split()
-        ways_to_say_i_am = ["im", "i'm", "i am"]
-        print("Dad joke incoming!")
-
-        for i in range(len(user_message)):
-            if len(user_message) - i < 2:
-                print("False alarm, user message too short!")
-                break
-            
-            elif user_message[i].lower() in ways_to_say_i_am:
-                response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
-                print(response)
-                await message.channel.send(response)
-                break
-
-            elif len(user_message) - i < 3:
-                print("False alarm, user message too short!")
-                break               
-            
-            elif user_message[i].lower() + " " + user_message[i + 1].lower() in ways_to_say_i_am:
-                response = "Hi " + " ".join(user_message[i + 2:]) + "! I'm dad!"
-                print(response)
-                await message.channel.send(response)
-                break
 
     elif 'happy birthday' in message.content.lower():
         """
@@ -119,6 +90,31 @@ async def on_message(message):
         await message.channel.send('Happy Birthday! 🎈🎉🎂')
 
     await bot.process_commands(message)
+
+
+    if 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i am' in message.content.lower():
+        """
+        Lets the bot tell the famous "Hi x! I'm dad!" joke
+        """
+
+        user_message = message.content.split()
+        
+        ways_to_say_i_am = [' im', ' i\'m']
+
+        for i in range(len(user_message)):
+            if (' ' + user_message[i].lower() in ways_to_say_i_am):
+
+                print("Dad joke incoming!")
+
+                if len(user_message) - i < 2:
+                    print("False alarm, user message too short!")
+                    break 
+
+                else:
+                    response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
+                    print(response)
+                    await message.channel.send(response)
+                    break
 
 
 @bot.command(name = '99', help = 'Responds with a random Brooklyn 99 quote.')

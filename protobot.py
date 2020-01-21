@@ -115,6 +115,27 @@ async def on_message(message):
                     print(response)
                     await message.channel.send(response)
                     break
+    
+    if 'hard' in message.content.lower() or 'long' in message.content.lower() or 'wet' in message.content.lower() or 'suck' in message.content.lower():
+        """
+        Lets the bot tell the famous "That's what she said" joke
+        """
+
+        user_message = message.content.split()
+        
+        dirty_words = [' hard', ' long', ' wet', ' suck']
+
+        for i in range(len(user_message)):
+            word = user_message[i].lower().strip("?").strip('"').strip("'")
+
+            if (' ' + word in dirty_words):
+
+                print("That's what she said incoming!")
+    
+                response = "That's what she said!"
+                print(response)
+                await message.channel.send(response)
+                break
 
 
 @bot.command(name = '99', help = 'Responds with a random Brooklyn 99 quote.')

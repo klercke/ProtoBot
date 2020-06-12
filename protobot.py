@@ -12,22 +12,42 @@ import discord                      #
 from dotenv import load_dotenv      #
 import random                       #
 from discord.ext import commands    #
+import logging                      #
+import time                         #
                                     #
 #####################################
+
 
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
 VERSION = "v0.1-alpha"              #
 ACTIVITY = discord.Game("!help")    #
+LOG_LEVEL = logging.INFO            #
                                     #
 #####################################
 
+
+# Load bot token from .env
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
-bot = commands.Bot(command_prefix=COMMAND_PREFIX)  
+# Initialize bot object to use the COMMAND_PREFIX defined above
+bot = commands.Bot(command_prefix=COMMAND_PREFIX)
 
+# Generate timestamp of startup
+timestamp = time.strftime('%Y%m%d-%H%M%S')
+
+# Configure logging
+logging.basicConfig(
+    level = LOG_LEVEL, 
+    format = '%(asctime)s: [%(levelname)s] - %(message)s',
+    datefmt = '%Y-%m-%d %H:%M:%S', 
+    handlers = [
+        logging.FileHandler(f"logs/{timestamp}.log", mode = "w"), 
+        logging.StreamHandler()
+    ]
+)
 
 @bot.event
 async def on_connect():
@@ -36,7 +56,7 @@ async def on_connect():
     Sets the bot activity to ACTIVITY.
     """
 
-    print(f'{bot.user.name} {VERSION} has sucessfully connected to Discord.')
+    logging.warning(f'{bot.user.name} {VERSION} has sucessfully connected to Discord.')
     await bot.change_presence(activity = ACTIVITY)
 
 
@@ -47,14 +67,11 @@ async def on_ready():
     date from Discord servers.
     """
 
-    print('Bot loading complete. Current guilds: ', end='')
+    logging.info('Bot loading complete. Current guilds: ')
     
-    guilds = []
     for guild in bot.guilds:
         label = guild.name + " (" + str(guild.id) + ")"
-        guilds.append(label)
-
-    print(*guilds, sep=', ')
+        logging.info(label)
 
 
 @bot.event
@@ -63,7 +80,7 @@ async def on_disconnect():
     Prints a message when bot disconnects from Discord. Usually this is temporary.
     """
 
-    print('Lost connection to Discord.')
+    logging.warning('Lost connection to Discord.')
 
 
 
@@ -88,11 +105,10 @@ async def on_error(event, *args, **kwargs):
     Writes to err.log whenever a message triggers an error
     """
 
-    with open('err.log', 'a', encoding='utf-8') as errfile:
-        if event == 'on_message':
-            errfile.write(f'Unhandled message: {args[0]}\n')
-        else:
-            raise
+    if event == 'on_message':
+        logging.error(f'Unhandled message: {args[0]}')
+    else:
+        logging.exception(event)
 
 
 @bot.event
@@ -114,7 +130,6 @@ async def on_message(message):
         Lets the bot say happy birthday whenever a user says it
         """
 
-        print("Wishing someone a happy birthday!")
         await message.channel.send('Happy Birthday! 🎈🎉🎂')
 
     await bot.process_commands(message)
@@ -132,15 +147,11 @@ async def on_message(message):
         for i in range(len(user_message)):
             if (' ' + user_message[i].lower() in ways_to_say_i_am):
 
-                print("Dad joke incoming!")
-
                 if len(user_message) - i < 2:
-                    print("False alarm, user message too short!")
                     break 
 
                 else:
                     response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
-                    print(response)
                     await message.channel.send(response)
                     break
     

@@ -23,7 +23,7 @@ import activity                     #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.1-alpha"              #
+VERSION = "v0.2-alpha"              #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #

@@ -130,12 +130,14 @@ async def on_message(message):
         Lets the bot say happy birthday whenever a user says it
         """
 
-        await message.channel.send('Happy Birthday! 🎈🎉🎂')
+        mentions = message.mentions
+        author = message.author.name + "(" + str(message.author.id) + ")"
+        logging.info(f"{author} wished happy birthday to {len(mentions)} user(s).")
+        for recipient in mentions:
+            await message.channel.send(f"Happy Birthday <@{recipient.id}>! 🎈🎉🎂")
 
-    await bot.process_commands(message)
 
-
-    if 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i am' in message.content.lower():
+    elif 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i am' in message.content.lower():
         """
         Lets the bot tell the famous "Hi x! I'm dad!" joke
         """
@@ -155,5 +157,7 @@ async def on_message(message):
                     await message.channel.send(response)
                     break
     
+
+    await bot.process_commands(message)
 
 bot.run(TOKEN)

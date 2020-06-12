@@ -30,26 +30,18 @@ LOG_LEVEL = logging.INFO            #
 #####################################
 
 
-# Load bot token from .env
-load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
+#################################
+                                #
+POINTS_PER_MESSAGE = 2          #
+POINTS_PER_MINUTE_TALKING = 1   #
+POINT_DECAY_PER_HOUR = 1        #
+                                #
+#################################
+
 
 # Initialize bot object to use the COMMAND_PREFIX defined above
 bot = commands.Bot(command_prefix=COMMAND_PREFIX)
 
-# Generate timestamp of startup
-timestamp = time.strftime('%Y%m%d-%H%M%S')
-
-# Configure logging
-logging.basicConfig(
-    level = LOG_LEVEL, 
-    format = '%(asctime)s: [%(levelname)s] - %(message)s',
-    datefmt = '%Y-%m-%d %H:%M:%S', 
-    handlers = [
-        logging.FileHandler(f"logs/{timestamp}.log", mode = "w"), 
-        logging.StreamHandler()
-    ]
-)
 
 @bot.event
 async def on_connect():
@@ -75,10 +67,10 @@ async def on_ready():
         label = guild.name + " (" + str(guild.id) + ")"
         logging.info(label)
 
-    activity.readDatabase()
+    activity.read_database()
 
     for guild in bot.guilds:
-        addAllUsersFromGuildToDatabase(guild)
+        add_all_users_from_guild_to_database(guild)
 
 
 @bot.event
@@ -88,6 +80,7 @@ async def on_disconnect():
     """
 
     logging.warning('Lost connection to Discord.')
+
 
 @bot.event
 async def on_guild_join(guild):
@@ -119,10 +112,9 @@ async def on_member_join(member):
     else:
         welcome_message = f"Welcome to {member.guild.name}, {member.name}!"
 
+    add_user_to_database(member.id, member.name)
+
     await member.dm_channel.send(welcome_message)
-
-
-
 
 
 @bot.event
@@ -143,14 +135,17 @@ async def on_message(message):
     Allows the bot to respond to user messages rather than commands
     """
 
-    if message.author == bot.user:
+    if message.author.bot:
         """
         Tells the bot to ignore its own messages
         """
 
-        return 
+        return
 
-    elif 'happy birthday' in message.content.lower():
+    else:
+        change_user_score(message.author.id, POINTS_PER_MESSAGE)
+
+    if 'happy birthday' in message.content.lower():
         """
         Lets the bot say happy birthday whenever a user says it
         """
@@ -184,12 +179,21 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-async def run_once_per_day():
+@bot.command(name="score", help="Displays your current server score.")
+async def check_user_score(ctx):
+    uuid = ctx.message.author.id
+    score = get_user_score(uuid)
+
+    # Take away the points the user gets for running the command
+    change_user_score(uuid, -POINTS_PER_MESSAGE)
+
+    await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
+
+
+async def run_once_every_day():
     """
     Runs a block of code every day sometime between 00:00 and 01:00 local time.
     """
-
-    await bot.wait_until_ready()
 
     if (int(time.strftime('%H', time.localtime())) < 1):
         # This code will run if it is the correct time
@@ -197,25 +201,89 @@ async def run_once_per_day():
     else:
         logging.debug("Attempted to run daily event out of defined hours.")
 
-    # Check every hour
+
+async def run_once_every_minute():
+    """
+    Runs a block of code every minute
+    """
+
+    await asyncio.sleep(60)
+
+    # Give every user in a voice channel points
+    for guild in bot.guilds:
+        for channel in guild.voice_channels:
+            for user in channel.members:
+                change_user_score(user.id, POINTS_PER_MINUTE_TALKING)
+
+
+async def run_once_every_hour():
+    """
+    Runs a block of code every hour
+    """
+
     await asyncio.sleep(3600)
 
+    # Call the once-each-day function so it can do its check
+    await run_once_every_day()
 
-def addAllUsersFromGuildToDatabase(guild):
+    activity.change_all_scores(-POINT_DECAY_PER_HOUR)
+
+
+def change_user_score(uuid, delta):
+    if (uuid in activity.USERS.keys()):
+        activity.USERS[uuid].change_score(delta)
+    else:
+        logging.error(f"Attempted to change score of user {uuid} when user is not in database.")
+
+
+def get_user_score(uuid):
+    if (uuid in activity.USERS.keys()):
+        return activity.USERS[uuid].score
+    else:
+        logging.error(f"Attempted to get score of user {uuid} when user is not in database.")
+
+
+def add_all_users_from_guild_to_database(guild):
     for user in guild.members:
         if (not user.bot):
-            addUserToDatabase(user.id, user.name)
+            add_user_to_database(user.id, user.name)
     
-    activity.writeDatabase()
+    activity.write_database()
 
 
-def addUserToDatabase(uuid, name, score=0, allowmoderator=True, rankexempt=False):
+def add_user_to_database(uuid, name, score=0, allowmoderator=True, rankexempt=False):
     if (not uuid in activity.USERS.keys()):
-                activity.addUser(uuid, name, score, allowmoderator, rankexempt)
+                activity.add_user(uuid, name, score, allowmoderator, rankexempt)
                 logging.info(f"Registered new user {name} ({uuid}) to database.")
     
-    activity.writeDatabase()
+    activity.write_database()
 
 
-bot.loop.create_task(run_once_per_day())
-bot.run(TOKEN)
+
+
+def main():
+    # Load bot token from .env
+    load_dotenv()
+    TOKEN = os.getenv('DISCORD_TOKEN')
+
+    # Generate timestamp of startup
+    timestamp = time.strftime('%Y%m%d-%H%M%S')
+
+    # Configure logging
+    logging.basicConfig(
+        level = LOG_LEVEL, 
+        format = '%(asctime)s: [%(levelname)s] - %(message)s',
+        datefmt = '%Y-%m-%d %H:%M:%S', 
+        handlers = [
+            logging.FileHandler(f"logs/{timestamp}.log", mode = "w"), 
+            logging.StreamHandler()
+        ]
+    )
+
+    bot.loop.create_task(run_once_every_minute())
+    bot.loop.create_task(run_once_every_hour())
+
+    bot.run(TOKEN)
+
+if __name__ == "__main__":
+    main()

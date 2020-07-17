@@ -85,10 +85,12 @@ async def on_disconnect():
 @bot.event
 async def on_guild_join(guild):
     """
-    Logs a message when bot joins a new guild.
+    Logs a message when bot joins a new guild and adds all users from that guild to the database.
     """
 
     logging.warning(f"Joined new guild: {guild.name + ' (' + str(guild.id) + ')'}")
+
+    add_all_users_from_guild_to_database(guild)
 
 
 @bot.event

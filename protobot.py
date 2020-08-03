@@ -23,7 +23,7 @@ import activity                     #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.2-alpha"              #
+VERSION = "v0.3-alpha"              #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -157,6 +157,19 @@ async def on_message(message):
         logging.info(f"{author} wished happy birthday to {len(mentions)} user(s).")
         for recipient in mentions:
             await message.channel.send(f"Happy Birthday <@{recipient.id}>! 🎈🎉🎂")
+
+    elif 'er' in message.content.lower():
+        """
+        Lets the bot tell the famous "x-er? I hardly know 'er!" joke
+        """
+
+        user_message = message.content.split()
+
+        for i in range(len(user_message)):
+            if (user_message[i][-2:] == "er"):
+                response = user_message[i][0].upper() + user_message[i][1:] + "? I hardly know her!"
+                await message.channel.send(response)
+                break
 
     elif 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i am' in message.content.lower():
         """

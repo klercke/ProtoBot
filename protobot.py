@@ -16,6 +16,7 @@ import logging                      #
 import time                         #
 import asyncio                      #
 import activity                     #
+import string                       #
                                     #
 #####################################
 
@@ -166,7 +167,8 @@ async def on_message(message):
         user_message = message.content.split()
 
         for i in range(len(user_message)):
-            if (user_message[i][-2:] == "er"):
+            user_message[i] = user_message[i].translate(str.maketrans('', '', string.punctuation))
+            if (user_message[i][-2:] == "er" and len(user_message[i]) > 4):
                 response = user_message[i][0].upper() + user_message[i][1:] + "? I hardly know her!"
                 await message.channel.send(response)
                 break

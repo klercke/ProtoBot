@@ -159,19 +159,19 @@ async def on_message(message):
         for recipient in mentions:
             await message.channel.send(f"Happy Birthday <@{recipient.id}>! 🎈🎉🎂")
 
-    elif 'er' in message.content.lower():
-        """
-        Lets the bot tell the famous "x-er? I hardly know 'er!" joke
-        """
+    #elif 'er' in message.content.lower():
+    #   """
+    #   Lets the bot tell the famous "x-er? I hardly know 'er!" joke
+    #   """
 
-        user_message = message.content.split()
+    #   user_message = message.content.split()
 
-        for i in range(len(user_message)):
-            user_message[i] = user_message[i].translate(str.maketrans('', '', string.punctuation))
-            if (user_message[i][-2:] == "er" and len(user_message[i]) > 4):
-                response = user_message[i][0].upper() + user_message[i][1:] + "? I hardly know her!"
-                await message.channel.send(response)
-                break
+    #   for i in range(len(user_message)):
+    #       user_message[i] = user_message[i].translate(str.maketrans('', '', string.punctuation))
+    #       if (user_message[i][-2:] == "er" and len(user_message[i]) > 4):
+    #           response = user_message[i][0].upper() + user_message[i][1:] + "? I hardly know her!"
+    #           await message.channel.send(response)
+    #           break
 
     elif 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i am' in message.content.lower():
         """

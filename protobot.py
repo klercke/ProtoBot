@@ -24,7 +24,7 @@ import string                       #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.3.1-alpha"              #
+VERSION = "v0.3.2-alpha"              #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -110,7 +110,7 @@ async def on_member_join(member):
         )
 
     elif (member.guild.id == 720996920939642912):
-        welcome_message = f"Welcome to the testing server, {member.name}!"
+        welcome_message = f"Welcome to the ProtoBot development server, {member.name}!"
 
     else:
         welcome_message = f"Welcome to {member.guild.name}, {member.name}!"
@@ -173,23 +173,32 @@ async def on_message(message):
     #           await message.channel.send(response)
     #           break
 
-    elif 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i am' in message.content.lower():
+    elif 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i`m' in message.content.lower() or \
+        'i‘m' in message.content.lower() or 'i´m' in message.content.lower() or 'i am' in message.content.lower():
         """
         Lets the bot tell the famous "Hi x! I'm dad!" joke
         """
 
         user_message = message.content.split()
         
-        ways_to_say_i_am = [' im', ' i\'m']
+        ways_to_say_i_am = [' im', ' i\'m', ' i´m', ' i`m', ' i‘m']
 
         for i in range(len(user_message)):
-            if (' ' + user_message[i].lower() in ways_to_say_i_am):
+            if ' ' + user_message[i].lower() in ways_to_say_i_am:
 
                 if len(user_message) - i < 2:
                     break 
 
                 else:
                     response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
+                    await message.channel.send(response)
+                    break
+
+            elif user_message[i].lower() == "i" and len(user_message) >= i:
+
+                if user_message[i + 1].lower() == "am":
+
+                    response = "Hi " + " ".join(user_message[i + 2:]) + "! I'm dad!"
                     await message.channel.send(response)
                     break
     

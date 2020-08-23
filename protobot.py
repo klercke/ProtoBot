@@ -24,7 +24,7 @@ import string                       #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.3-alpha"              #
+VERSION = "v0.3.1-alpha"              #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #

@@ -145,7 +145,7 @@ async def on_message(message):
 
         return
 
-    else:
+    elif message.content[0] != "!":
         change_user_score(message.author.id, POINTS_PER_MESSAGE)
 
     if 'happy birthday' in message.content.lower():
@@ -200,9 +200,6 @@ async def on_message(message):
 async def check_user_score(ctx):
     uuid = ctx.message.author.id
     score = get_user_score(uuid)
-
-    # Take away the points the user gets for running the command
-    change_user_score(uuid, -POINTS_PER_MESSAGE)
 
     await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
 

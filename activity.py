@@ -16,6 +16,7 @@ import csv                          #
 #################################
                                 #
 USER_DATABSE = 'data/users.csv' #
+MAX_SCORE = 250                 #
                                 #
 #################################
 
@@ -37,16 +38,20 @@ class User:
 
     
     def change_score(self, delta):
-        if (self.score + delta > 0 and self.score + delta < 250):
+        if (self.score + delta > MAX_SCORE):
+            self.score = MAX_SCORE
+        elif (self.score + delta < 0):
+            self.score = 0
+        else:
             self.score += delta
+
         write_database()
-        return self.score
 
 
 def change_all_scores(delta):
     for user in USERS.values():
-        if (user.score + delta > 0 and user.score + delta < 250):
-            user.score += delta
+        user.change_score(delta)
+        
     
     write_database()
 

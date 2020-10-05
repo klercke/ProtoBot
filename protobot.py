@@ -145,7 +145,14 @@ async def on_message(message):
 
         return
 
-    elif message.content[0] != "!":
+    if message.channel.id = 759892648827551745 or message.channel.id = 759896557578354718:
+        """
+        Tells the bot not to respond in #introduce yourself of mod-lounge
+        """
+
+        return
+
+    if message.content[0] != "!":
         change_user_score(message.author.id, POINTS_PER_MESSAGE)
 
     if 'happy birthday' in message.content.lower():

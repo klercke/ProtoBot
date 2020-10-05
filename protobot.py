@@ -145,7 +145,7 @@ async def on_message(message):
 
         return
 
-    if message.channel.id = 759892648827551745 or message.channel.id = 759896557578354718:
+    if message.channel.id == 759892648827551745 or message.channel.id == 759896557578354718:
         """
         Tells the bot not to respond in #introduce yourself of mod-lounge
         """

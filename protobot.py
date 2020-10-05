@@ -24,7 +24,7 @@ import string                       #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.3.2-alpha"              #
+VERSION = "v0.3.3-alpha"              #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -211,6 +211,16 @@ async def check_user_score(ctx):
     score = get_user_score(uuid)
 
     await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
+
+
+@bot.command(name="correct", help="Sends correct.png")
+async def correct(ctx):
+    await ctx.message.channel.send(file=discord.File('resources/correct.png'))
+
+
+@bot.command(name="what", help="Sends what.png")
+async def what(ctx):
+    await ctx.message.channel.send(file=discord.File('resources/what.png'))
 
 
 async def run_once_every_day():

@@ -24,7 +24,7 @@ import string                       #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.3.3-alpha"              #
+VERSION = "v0.3.4-alpha"            #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -205,12 +205,19 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-@bot.command(name="score", help="Displays your current server score.")
+@bot.command(name="score", help="Displays your current score, or someone else's score if mentioned")
 async def check_user_score(ctx):
-    uuid = ctx.message.author.id
-    score = get_user_score(uuid)
+    if (ctx.message.mentions == []):
+        uuid = ctx.message.author.id
+        score = get_user_score(uuid)
+        await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
+    else:
+        for user in ctx.message.mentions:
+            uuid = user.id
+            score = get_user_score(uuid)
+            await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
 
-    await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
+    
 
 
 @bot.command(name="correct", help="Sends correct.png")

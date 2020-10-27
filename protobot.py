@@ -237,6 +237,31 @@ async def what(ctx):
     await ctx.message.channel.send(file=discord.File('resources/what.png'))
 
 
+@bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")
+async def what(ctx):
+    ways_to_say_based = [
+        "Based.",
+        "Based and redpilled.",
+        "Based and Teddypilled.",
+        "Based? Based on what?",
+        "Based upon pillars of salt and pillars of sand.",
+        "Not based.",
+        "Cringe and bluepilled.",
+        "CEO of the Based Department.",
+        "Enemy of the Based."
+    ]
+
+    response = random.choice(ways_to_say_based)
+
+    if (ctx.message.mentions != []):
+        uuid = ctx.message.mentions[0].id
+        response = f"<@{uuid}> is " + response
+
+    await ctx.send(response)
+
+
+
+
 async def run_once_every_day():
     """
     Runs a block of code every day sometime between 00:00 and 01:00 local time.

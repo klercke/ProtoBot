@@ -248,7 +248,8 @@ async def what(ctx):
         "Not based.",
         "Cringe and bluepilled.",
         "CEO of the Based Department.",
-        "Enemy of the Based."
+        "Enemy of the based.",
+        "All of your based are belong to us."
     ]
 
     response = random.choice(ways_to_say_based)
@@ -258,8 +259,6 @@ async def what(ctx):
         response = f"<@{uuid}> is " + response
 
     await ctx.send(response)
-
-
 
 
 async def run_once_every_day():

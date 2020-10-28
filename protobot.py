@@ -237,8 +237,6 @@ async def what(ctx):
     await ctx.message.channel.send(file=discord.File('resources/what.png'))
 
 
-<<<<<<< Updated upstream
-=======
 @bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")
 async def what(ctx):
     ways_to_say_based = [
@@ -263,9 +261,6 @@ async def what(ctx):
     await ctx.send(response)
 
 
-
-
->>>>>>> Stashed changes
 async def run_once_every_day():
     """
     Runs a block of code every day sometime between 00:00 and 01:00 local time.

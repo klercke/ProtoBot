@@ -224,8 +224,6 @@ async def check_user_score(ctx):
             score = get_user_score(uuid)
             await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
 
-    
-
 
 @bot.command(name="correct", help="Sends correct.png")
 async def correct(ctx):
@@ -235,6 +233,11 @@ async def correct(ctx):
 @bot.command(name="what", help="Sends what.png")
 async def what(ctx):
     await ctx.message.channel.send(file=discord.File('resources/what.png'))
+
+
+@bot.command(name="strange", help="Sends strange.png")
+async def strange(ctx):
+    await ctx.messag.channel.send(file=discord.File('resources/strange.png'))
 
 
 @bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")

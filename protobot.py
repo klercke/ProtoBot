@@ -24,7 +24,7 @@ import string                       #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.3.4-alpha"            #
+VERSION = "v0.3.5-alpha"            #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -237,7 +237,7 @@ async def what(ctx):
 
 @bot.command(name="strange", help="Sends strange.png")
 async def strange(ctx):
-    await ctx.messag.channel.send(file=discord.File('resources/strange.png'))
+    await ctx.message.channel.send(file=discord.File('resources/strange.png'))
 
 
 @bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")

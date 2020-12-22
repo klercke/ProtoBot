@@ -55,7 +55,7 @@ async def on_connect():
     await bot.change_presence(activity = ACTIVITY)
 
 
-@bot.event 
+@bot.event
 async def on_ready():
     """
     Prints a list of guilds the bot is connected to when the bot is finished processing
@@ -63,7 +63,7 @@ async def on_ready():
     """
 
     logging.info('Bot loading complete. Current guilds: ')
-    
+
     for guild in bot.guilds:
         label = guild.name + " (" + str(guild.id) + ")"
         logging.info(label)
@@ -103,7 +103,7 @@ async def on_member_join(member):
     await member.create_dm()
     if (member.guild.id == 150717946333888514):
         welcome_message = (
-            f"Hi {member.name}, welcome to Konnor's Discord server. Please set your " 
+            f"Hi {member.name}, welcome to Lounge server. Please set your "
             "nickname to match the naming scheme used on the server. For example, if "
             "my name was John, my nickname would be \"Protobot | John\". Please also "
             "make sure to read any messages pinned in the #important channel."
@@ -152,6 +152,26 @@ async def on_message(message):
 
         return
 
+    if message.channel.name.lower() == 'counting':
+        # Check to see if message is an int
+        invalid_message = False
+        try:
+            int(message.content)
+        except ValueError:
+            invalid_message = True
+
+        if not invalid_message:
+            # Check to make sure the message is the next int sequentially
+            channel_history = await message.channel.history(limit=2).flatten()
+            if len(channel_history) != 1:
+                last_msg = channel_history[1]
+                if (int(message.content) != int(last_msg.content) + 1):
+                    await message.channel.send(f"<@{message.author.id}> sent an incorrect number! Counting is now over!")
+                    await message.channel.set_permissions(message.guild.default_role, send_messages = False)
+        else:
+            await message.channel.send(f"<@{message.author.id}> sent an incorrect number! Counting is now over!")
+            await message.channel.set_permissions(message.guild.default_role, send_messages = False)
+
     if message.content[0] != "!":
         change_user_score(message.author.id, POINTS_PER_MESSAGE)
 
@@ -166,20 +186,6 @@ async def on_message(message):
         for recipient in mentions:
             await message.channel.send(f"Happy Birthday <@{recipient.id}>! 🎈🎉🎂")
 
-    #elif 'er' in message.content.lower():
-    #   """
-    #   Lets the bot tell the famous "x-er? I hardly know 'er!" joke
-    #   """
-
-    #   user_message = message.content.split()
-
-    #   for i in range(len(user_message)):
-    #       user_message[i] = user_message[i].translate(str.maketrans('', '', string.punctuation))
-    #       if (user_message[i][-2:] == "er" and len(user_message[i]) > 4):
-    #           response = user_message[i][0].upper() + user_message[i][1:] + "? I hardly know her!"
-    #           await message.channel.send(response)
-    #           break
-
     elif 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i`m' in message.content.lower() or \
         'i‘m' in message.content.lower() or 'i´m' in message.content.lower() or 'i am' in message.content.lower():
         """
@@ -187,14 +193,14 @@ async def on_message(message):
         """
 
         user_message = message.content.split()
-        
+
         ways_to_say_i_am = [' im', ' i\'m', ' i´m', ' i`m', ' i‘m']
 
         for i in range(len(user_message)):
             if ' ' + user_message[i].lower() in ways_to_say_i_am:
 
                 if len(user_message) - i < 2:
-                    break 
+                    break
 
                 else:
                     response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
@@ -208,7 +214,10 @@ async def on_message(message):
                     response = "Hi " + " ".join(user_message[i + 2:]) + "! I'm dad!"
                     await message.channel.send(response)
                     break
-    
+
+    else:
+        return
+
     await bot.process_commands(message)
 
 
@@ -241,7 +250,7 @@ async def strange(ctx):
 
 
 @bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")
-async def what(ctx):
+async def based(ctx):
     ways_to_say_based = [
         "Based.",
         "Based and redpilled.",
@@ -321,7 +330,7 @@ def add_all_users_from_guild_to_database(guild):
     for user in guild.members:
         if (not user.bot):
             add_user_to_database(user.id, user.name)
-    
+
     activity.write_database()
 
 
@@ -329,10 +338,8 @@ def add_user_to_database(uuid, name, score=0, allowmoderator=True, rankexempt=Fa
     if (not uuid in activity.USERS.keys()):
                 activity.add_user(uuid, name, score, allowmoderator, rankexempt)
                 logging.info(f"Registered new user {name} ({uuid}) to database.")
-    
+
     activity.write_database()
-
-
 
 
 def main():
@@ -345,11 +352,11 @@ def main():
 
     # Configure logging
     logging.basicConfig(
-        level = LOG_LEVEL, 
+        level = LOG_LEVEL,
         format = '%(asctime)s: [%(levelname)s] - %(message)s',
-        datefmt = '%Y-%m-%d %H:%M:%S', 
+        datefmt = '%Y-%m-%d %H:%M:%S',
         handlers = [
-            logging.FileHandler(f"logs/{timestamp}.log", mode = "w"), 
+            logging.FileHandler(f"logs/{timestamp}.log", mode = "w"),
             logging.StreamHandler()
         ]
     )

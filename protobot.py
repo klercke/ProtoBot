@@ -17,6 +17,7 @@ import time                         #
 import asyncio                      #
 import activity                     #
 import string                       #
+import schedule                     #
                                     #
 #####################################
 
@@ -51,7 +52,7 @@ async def on_connect():
     Sets the bot activity to ACTIVITY.
     """
 
-    logging.warning(f'{bot.user.name} {VERSION} has sucessfully connected to Discord.')
+    logging.warning(f'{bot.user.name} {VERSION} has successfully connected to Discord.')
     await bot.change_presence(activity = ACTIVITY)
 
 
@@ -59,7 +60,7 @@ async def on_connect():
 async def on_ready():
     """
     Prints a list of guilds the bot is connected to when the bot is finished processing
-    date from Discord servers. Also calls the initizaling functions in activity.py.
+    date from Discord servers. Also calls the initializing functions in activity.py.
     """
 
     logging.info('Bot loading complete. Current guilds: ')
@@ -72,6 +73,15 @@ async def on_ready():
 
     for guild in bot.guilds:
         add_all_users_from_guild_to_database(guild)
+
+    logging.info("Scheduling events...")
+    logging.info("Daily events")
+    schedule.every().day.at("00:00").do(run_once_every_day)
+    logging.info("Hourly events")
+    schedule.every().hour.do(run_once_every_hour)
+    logging.info("Minutely events")
+    schedule.every().minute.do(run_once_every_minute)
+    logging.info("Scheduling complete!")
 
 
 @bot.event
@@ -105,7 +115,7 @@ async def on_member_join(member):
         welcome_message = (
             f"Hi {member.name}, welcome to Lounge server. Please set your "
             "nickname to match the naming scheme used on the server. For example, if "
-            "my name was John, my nickname would be \"Protobot | John\". Please also "
+            "my name was John, my nickname would be \"ProtoBot | John\". Please also "
             "make sure to read any messages pinned in the #important channel."
         )
 
@@ -283,24 +293,20 @@ async def about(ctx):
     await ctx.message.channel.send(f"ProtoBot {VERSION}. Source code and bug tracker: https://github.com/klercke/ProtoBot")
 
 
-async def run_once_every_day():
+def run_once_every_day():
     """
-    Runs a block of code every day sometime between 00:00 and 01:00 local time.
-    """
-
-    if (int(time.strftime('%H', time.localtime())) < 1):
-        # This code will run if it is the correct time
-        logging.info("Running nightly operations.")
-    else:
-        logging.debug("Attempted to run daily event out of defined hours.")
-
-
-async def run_once_every_minute():
-    """
-    Runs a block of code every minute
+    Runs a block of code every day.
     """
 
-    await asyncio.sleep(60)
+    logging.info("Running nightly operations.")
+    pass
+
+
+
+def run_once_every_minute():
+    """
+    Runs a block of code every minute.
+    """
 
     # Give every user in a voice channel points
     for guild in bot.guilds:
@@ -309,15 +315,10 @@ async def run_once_every_minute():
                 change_user_score(user.id, POINTS_PER_MINUTE_TALKING)
 
 
-async def run_once_every_hour():
+def run_once_every_hour():
     """
-    Runs a block of code every hour
+    Runs a block of code every hour.
     """
-
-    await asyncio.sleep(3600)
-
-    # Call the once-each-day function so it can do its check
-    await run_once_every_day()
 
     activity.change_all_scores(-POINT_DECAY_PER_HOUR)
 
@@ -370,9 +371,6 @@ def main():
             logging.StreamHandler()
         ]
     )
-
-    bot.loop.create_task(run_once_every_minute())
-    bot.loop.create_task(run_once_every_hour())
 
     bot.run(TOKEN)
 

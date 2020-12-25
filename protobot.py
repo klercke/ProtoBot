@@ -216,7 +216,7 @@ async def on_message(message):
 
             elif user_message[i].lower() == "i" and len(user_message) >= i:
 
-                if user_message[i + 1].lower() == "am":
+                if user_message[i + 1].lower() == "am" and len(user_message > 2):
 
                     response = "Hi " + " ".join(user_message[i + 2:]) + "! I'm dad!"
                     await message.channel.send(response)

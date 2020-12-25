@@ -194,14 +194,15 @@ async def on_message(message):
             await message.channel.send(f"Happy Birthday <@{recipient.id}>! 🎈🎉🎂")
 
     elif 'im' in message.content.lower() or 'i\'m' in message.content.lower() or 'i`m' in message.content.lower() or \
-        'i‘m' in message.content.lower() or 'i´m' in message.content.lower() or 'i am' in message.content.lower():
+        'i‘m' in message.content.lower() or 'i´m' in message.content.lower() or 'i am' in message.content.lower() or \
+        'i’m' in message.content.lower():
         """
         Lets the bot tell the famous "Hi x! I'm dad!" joke
         """
 
         user_message = message.content.split()
 
-        ways_to_say_i_am = [' im', ' i\'m', ' i´m', ' i`m', ' i‘m']
+        ways_to_say_i_am = [' im', ' i\'m', ' i´m', ' i`m', ' i‘m', ' i’m']
 
         for i in range(len(user_message)):
             if ' ' + user_message[i].lower() in ways_to_say_i_am:

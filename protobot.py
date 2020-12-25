@@ -369,6 +369,7 @@ async def poll(ctx):
             await message_sent.add_reaction(emoji)
     except:
         await ctx.message.channel.send(f"<@{user.id}>, something went wrong with your command. Please make sure to use proper syntax:\n!poll \"QUESTION\" TIME[S/M/H/D] EMOJI1 EMOJI2 ...")
+        return
 
     async def count_poll_results(message_sent, poll_time_in_sec):
         # Wait for voting to finish

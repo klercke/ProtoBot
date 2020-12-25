@@ -24,7 +24,7 @@ import string                       #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.3.5-alpha"            #
+VERSION = "v0.4.1-alpha"            #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -145,6 +145,13 @@ async def on_message(message):
 
         return
 
+    if not message.content:
+        """
+        Tells the bot to ignore messages with no text content
+        """
+
+        return
+
     if message.channel.id == 759892648827551745 or message.channel.id == 759896557578354718:
         """
         Tells the bot not to respond in #introduce yourself of mod-lounge
@@ -215,9 +222,6 @@ async def on_message(message):
                     await message.channel.send(response)
                     break
 
-    else:
-        return
-
     await bot.process_commands(message)
 
 
@@ -271,6 +275,11 @@ async def based(ctx):
         response = f"<@{uuid}> is " + response
 
     await ctx.send(response)
+
+
+@bot.command(name="about", help="Displays some information about ProtoBot.")
+async def about(ctx):
+    await ctx.message.channel.send(f"ProtoBot {VERSION}. Source code and bug tracker: https://github.com/klercke/ProtoBot")
 
 
 async def run_once_every_day():

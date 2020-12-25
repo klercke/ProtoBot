@@ -298,7 +298,7 @@ async def about(ctx):
     await ctx.message.channel.send(f"ProtoBot {VERSION}. Source code and bug tracker: https://github.com/klercke/ProtoBot")
 
 
-@bot.command(name="poll", help="Creates a poll. Usage: !poll \"PROMPT\" TIME OPTION1 OPTION2 [OPTION3...]")
+@bot.command(name="poll", help="Creates a poll. Usage: !poll \"QUESTION\" TIME[S/M/H/D] EMOJI1 EMOJI2 ...")
 async def poll(ctx):
     """
     Allows users to create timed polls
@@ -307,65 +307,68 @@ async def poll(ctx):
     user_input = ctx.message.content
     user = ctx.message.author
     
-    # Get the user's question
-    prompt = ""
-    writing = False
-    count = 0
-    for character in user_input:
-        count += 1
-        if not writing and character == "\"":
-            writing = True
-        elif writing:
-            if character == "\"":
-                writing = False
-                break
-            else:
-                prompt += character
-        elif count == len(user_input) - 1:
-            await ctx.channel.send("Sorry, I couldn't understand your command. Please make sure the poll question is in quotes.")
-            return
-    
-    # Get the TTL for the poll
-    user_input = user_input[count + 1:]
-    if not user_input:
-        await ctx.channel.send("You didn't provide a time. Assuming 5 minutes.")
-        poll_time = "5m"
-    else:
-        poll_time = ""
+    try:
+        # Get the user's question
+        prompt = ""
+        writing = False
         count = 0
         for character in user_input:
             count += 1
-            if character != " ":
-                poll_time += character
-            else:
-                break
+            if not writing and character == "\"":
+                writing = True
+            elif writing:
+                if character == "\"":
+                    writing = False
+                    break
+                else:
+                    prompt += character
+            elif count == len(user_input) - 1:
+                await ctx.channel.send("Sorry, I couldn't understand your command. Please make sure the poll question is in quotes.")
+                return
 
-    unit_long = ""
-    unit = poll_time[-1].lower()
-    poll_time = int(poll_time[:-1])
-    poll_time_in_sec = 0
-    if unit == 's':
-        unit_long = "seconds"
-        poll_time_in_sec = poll_time
-    elif unit == 'm':
-        unit_long = "minutes"
-        poll_time_in_sec = poll_time * 60
-    elif unit == 'h':
-        unit_long = "hours"
-        poll_time_in_sec = poll_time * 3600
-    elif unit == 'd':
-        unit_long = "days"
-        poll_time_in_sec = poll_time * 86400
+        # Get the TTL for the poll
+        user_input = user_input[count + 1:]
+        if not user_input:
+            await ctx.channel.send("You didn't provide a time. Assuming 5 minutes.")
+            poll_time = "5m"
+        else:
+            poll_time = ""
+            count = 0
+            for character in user_input:
+                count += 1
+                if character != " ":
+                    poll_time += character
+                else:
+                    break
+
+        unit_long = ""
+        unit = poll_time[-1].lower()
+        poll_time = int(poll_time[:-1])
+        poll_time_in_sec = 0
+        if unit == 's':
+            unit_long = "seconds"
+            poll_time_in_sec = poll_time
+        elif unit == 'm':
+            unit_long = "minutes"
+            poll_time_in_sec = poll_time * 60
+        elif unit == 'h':
+            unit_long = "hours"
+            poll_time_in_sec = poll_time * 3600
+        elif unit == 'd':
+            unit_long = "days"
+            poll_time_in_sec = poll_time * 86400
 
 
-    # Get emoji options
-    user_input = user_input[count:]
-    user_input = user_input.split()
-    options = []
-    message_sent = await ctx.message.channel.send(f"<@{user.id}> has started a poll:\n{prompt}\nVoting will last {poll_time} {unit_long}.")
-    for emoji in user_input:
-        options += emoji
-        await message_sent.add_reaction(emoji)
+        # Get emoji options
+        user_input = user_input[count:]
+        user_input = user_input.split()
+        options = []
+        message_sent = await ctx.message.channel.send(f"<@{user.id}> has started a poll:\n{prompt}\nVoting will last {poll_time} {unit_long}.")
+        for emoji in user_input:
+            options += emoji
+            await message_sent.add_reaction(emoji)
+    except:
+        await ctx.message.channel.send(f"<@{user.id}>, something went wrong with your command. Please make sure to use proper syntax:\n!poll \"QUESTION\" TIME[S/M/H/D] EMOJI1 EMOJI2 ...")
 
     async def count_poll_results(message_sent, poll_time_in_sec):
         # Wait for voting to finish

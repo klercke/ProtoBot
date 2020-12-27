@@ -402,6 +402,7 @@ async def poll(ctx):
                     tie = True
 
             # If there's a tie, find out which results tied and make a string out of them, then print results
+            winner_percentage = round((results[winner] / total_votes) * 100, 2)
             if tie:
                 tied_emojis = []
                 tie_string = ""
@@ -420,7 +421,6 @@ async def poll(ctx):
 
             # Otherwise, show winner
             else:
-                winner_percentage = round((results[winner] / total_votes) * 100, 2)
                 await message_sent.channel.send(f"Voting for \"{prompt}\" complete. {winner} is the winner with {results[winner]} ({winner_percentage}%) votes!")
 
     await count_poll_results(message_sent, poll_time_in_sec)

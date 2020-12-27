@@ -27,7 +27,7 @@ import threading                    #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.5.0-alpha"            #
+VERSION = "v0.5.1-alpha"            #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -392,10 +392,36 @@ async def poll(ctx):
         if total_votes == 0:
             await message_sent.channel.send(f"Voting for \"{prompt}\" complete. Nobody voted!")
         else:
-            # Display results
+            # Find winner
             winner = max(results, key = results.get)
-            winner_percentage = round((results[winner] / total_votes) * 100, 2)
-            await message_sent.channel.send(f"Voting for \"{prompt}\" complete. {winner} is the winner with {results[winner]} ({winner_percentage}%) votes!")
+
+            # Check for ties
+            tie = False
+            for result in results.keys():
+                if results[result] == results[winner]:
+                    tie = True
+
+            # If there's a tie, find out which results tied and make a string out of them, then print results
+            if tie:
+                tied_emojis = []
+                tie_string = ""
+                for result in results.keys():
+                    if results[result] == results[winner]:
+                        tied_emojis.append(result)
+                num_ties = len(tied_emojis)
+                for i in range(num_ties - 1):
+                    tie_string += f"{tied_emojis[i]}, "
+                tie_string += f"and {tied_emojis[i + 1]}"
+                # Remove comma for only 2 results
+                if num_ties == 2:
+                    tie_string = tie_string.replace(',', '')
+
+                await message_sent.channel.send(f"Voting for \"{prompt}\" complete. There was a {num_ties}-way tie between {tie_string} with {results[winner]} ({winner_percentage}%) votes each.")
+
+            # Otherwise, show winner
+            else:
+                winner_percentage = round((results[winner] / total_votes) * 100, 2)
+                await message_sent.channel.send(f"Voting for \"{prompt}\" complete. {winner} is the winner with {results[winner]} ({winner_percentage}%) votes!")
 
     await count_poll_results(message_sent, poll_time_in_sec)
     
@@ -405,7 +431,6 @@ def run_once_every_day():
     Runs a block of code every day.
     """
 
-    logging.info("Running nightly operations.")
     pass
 
 

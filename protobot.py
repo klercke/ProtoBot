@@ -450,6 +450,9 @@ async def compile(ctx):
 
         await ctx.message.channel.send(file = discord.File(filename), reference = ctx.message)
 
+    
+    os.remove(filename)
+    
     return
     
 

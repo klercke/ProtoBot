@@ -2,5 +2,7 @@
 *.log
 *.csv
 *.png
+.env
+.python-version
 .vscode/
 __pycache__/

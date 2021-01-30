@@ -20,6 +20,7 @@ import activity                     #
 import string                       #
 import schedule                     #
 import threading                    #
+from sympy import preview           #
                                     #
 #####################################
 
@@ -27,7 +28,7 @@ import threading                    #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.5.1-alpha"            #
+VERSION = "v0.6.0-alpha"            #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -424,6 +425,32 @@ async def poll(ctx):
                 await message_sent.channel.send(f"Voting for \"{prompt}\" complete. {winner} is the winner with {results[winner]} ({winner_percentage}%) votes!")
 
     await count_poll_results(message_sent, poll_time_in_sec)
+
+
+@bot.command(name="tex", help="Takes the first code block and interprets it as LaTeX code, responding with a png of the output")
+async def compile(ctx):
+    if not os.path.isdir('tmp'):
+        logging.info("tmp/ not found, making it now")
+        os.mkdir('tmp')
+
+    if not "```" in ctx.message.content:
+        return
+    tmp = ctx.message.content[ctx.message.content.find('`') + 3:]
+    if not "```" in tmp:
+        return
+
+    user_input = ctx.message.content
+    user_input = user_input[user_input.find('`') + 3:]
+    user_input = user_input[:user_input.find('`')]
+
+    with ctx.channel.typing():
+
+        filename = 'tmp/' + time.strftime('%Y%m%d-%H%M%S') + '.png'
+        preview(user_input, viewer='file', filename=filename, euler=False)
+
+        await ctx.message.channel.send(file = discord.File(filename), reference = ctx.message)
+
+    return
     
 
 def run_once_every_day():

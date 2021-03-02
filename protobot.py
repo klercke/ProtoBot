@@ -40,6 +40,7 @@ LOG_LEVEL = logging.INFO            #
 POINTS_PER_MESSAGE = 2          #
 POINTS_PER_MINUTE_TALKING = 1   #
 POINT_DECAY_PER_HOUR = 1        #
+DAD_JOKE_CHANCE = 10            #
                                 #
 #################################
 
@@ -226,18 +227,23 @@ async def on_message(message):
                 if len(user_message) - i < 2:
                     break
 
+                elif ' ' + user_message[i + 1].lower() == ' dad':
+                    response = "Hi Dad, I'm ProtoBot!"
+                    await message.channel.send(response)
+                    break
+
                 else:
-                    response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
-                    await message.channel.send(response)
-                    break
+                    x = random.randint(1, DAD_JOKE_CHANCE)
 
-            elif user_message[i].lower() == "i" and len(user_message) >= i:
+                    if (x == 1):
+                        # Tell a dad joke 1/DAD_JOKE_CHANCE times
+                        response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
+                        await message.channel.send(response)
+                        break
 
-                if user_message[i + 1].lower() == "am" and len(user_message > 2):
-
-                    response = "Hi " + " ".join(user_message[i + 2:]) + "! I'm dad!"
-                    await message.channel.send(response)
-                    break
+                    else:
+                        # Don't tell a joke
+                        break
 
     await bot.process_commands(message)
 

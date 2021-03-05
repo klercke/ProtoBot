@@ -276,7 +276,12 @@ async def strange(ctx):
     await ctx.message.channel.send(file=discord.File('resources/strange.png'))
 
 
-@bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")
+@bot.command(name="nice", help="Sends nice.png")
+async def nice(ctx):
+    await ctx.message.channel.send(file=discord.File('resources/nice.png'))
+
+
+bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")
 async def based(ctx):
     ways_to_say_based = [
         "Based.",

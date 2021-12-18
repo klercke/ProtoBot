@@ -29,8 +29,8 @@ import sqlite3                      #
 #################################################
                                                 #
 COMMAND_PREFIX = '!'                            #
-VERSION = "v0.6.0-alpha"                        #
-STATUS = "you in your sleep"                    #
+VERSION = "v0.7.0-alpha"                        #
+STATUS = "for !help"                            #
 ACTIVITY_TYPE = discord.ActivityType.watching   #
 LOG_LEVEL = logging.INFO                        #
                                                 #

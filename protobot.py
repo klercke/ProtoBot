@@ -21,6 +21,7 @@ import string                       #
 import schedule                     #
 import threading                    #
 from sympy import preview           #
+import sqlite3                      #
                                     #
 #####################################
 

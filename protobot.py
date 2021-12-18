@@ -20,6 +20,7 @@ import activity                     #
 import string                       #
 import schedule                     #
 import threading                    #
+from sympy import preview           #
                                     #
 #####################################
 
@@ -27,7 +28,7 @@ import threading                    #
 #####################################
                                     #
 COMMAND_PREFIX = '!'                #
-VERSION = "v0.5.2-alpha"            #
+VERSION = "v0.6.0-alpha"            #
 ACTIVITY = discord.Game("!help")    #
 LOG_LEVEL = logging.INFO            #
                                     #
@@ -39,6 +40,7 @@ LOG_LEVEL = logging.INFO            #
 POINTS_PER_MESSAGE = 2          #
 POINTS_PER_MINUTE_TALKING = 1   #
 POINT_DECAY_PER_HOUR = 1        #
+DAD_JOKE_CHANCE = 10            #
                                 #
 #################################
 
@@ -225,18 +227,23 @@ async def on_message(message):
                 if len(user_message) - i < 2:
                     break
 
+                elif ' ' + user_message[i + 1].lower() == ' dad':
+                    response = "Hi Dad, I'm ProtoBot!"
+                    await message.channel.send(response)
+                    break
+
                 else:
-                    response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
-                    await message.channel.send(response)
-                    break
+                    x = random.randint(1, DAD_JOKE_CHANCE)
 
-            elif user_message[i].lower() == "i" and len(user_message) >= i:
+                    if (x == 1):
+                        # Tell a dad joke 1/DAD_JOKE_CHANCE times
+                        response = "Hi " + " ".join(user_message[i + 1:]) + "! I'm dad!"
+                        await message.channel.send(response)
+                        break
 
-                if user_message[i + 1].lower() == "am" and len(user_message > 2):
-
-                    response = "Hi " + " ".join(user_message[i + 2:]) + "! I'm dad!"
-                    await message.channel.send(response)
-                    break
+                    else:
+                        # Don't tell a joke
+                        break
 
     await bot.process_commands(message)
 
@@ -267,6 +274,11 @@ async def what(ctx):
 @bot.command(name="strange", help="Sends strange.png")
 async def strange(ctx):
     await ctx.message.channel.send(file=discord.File('resources/strange.png'))
+
+
+@bot.command(name="nice", help="Sends nice.png")
+async def nice(ctx):
+    await ctx.message.channel.send(file=discord.File('resources/nice.png'))
 
 
 @bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")
@@ -424,6 +436,35 @@ async def poll(ctx):
                 await message_sent.channel.send(f"Voting for \"{prompt}\" complete. {winner} is the winner with {results[winner]} ({winner_percentage}%) votes!")
 
     await count_poll_results(message_sent, poll_time_in_sec)
+
+
+@bot.command(name="tex", help="Takes the first code block and interprets it as LaTeX code, responding with a png of the output")
+async def compile(ctx):
+    if not os.path.isdir('tmp'):
+        logging.info("tmp/ not found, making it now")
+        os.mkdir('tmp')
+
+    if not "```" in ctx.message.content:
+        return
+    tmp = ctx.message.content[ctx.message.content.find('`') + 3:]
+    if not "```" in tmp:
+        return
+
+    user_input = ctx.message.content
+    user_input = user_input[user_input.find('`') + 3:]
+    user_input = user_input[:user_input.find('`')]
+
+    with ctx.channel.typing():
+
+        filename = 'tmp/' + time.strftime('%Y%m%d-%H%M%S') + '.png'
+        preview(user_input, viewer='file', filename=filename, euler=False)
+
+        await ctx.message.channel.send(file = discord.File(filename), reference = ctx.message)
+
+    
+    os.remove(filename)
+    
+    return
     
 
 def run_once_every_day():

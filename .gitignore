@@ -1,6 +1,6 @@
 .env
 *.log
-*.csv
+*.db
 .env
 .python-version
 .vscode/

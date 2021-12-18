@@ -5,94 +5,74 @@ Purpose: Provide data on users to protobot.py
 """
 
 
-#####################################
-                                    #
-from dataclasses import dataclass   #
-import csv                          #                
-                                    #
-#####################################
+#################
+                #
+import sqlite3  #                
+                #
+#################
 
 
 #################################
                                 #
-USER_DATABSE = 'data/users.csv' #
+USER_DATABSE = r'data/users.db' #
 MAX_SCORE = 250                 #
                                 #
 #################################
 
 
-USERS = dict()
+def get_user_score(snowflake):
+    cur.execute("""
+    SELECT score 
+    FROM users 
+    WHERE snowflake = (?);
+    """,
+    (snowflake,))
+
+    return cur.fetchone()[0]
 
 
-@dataclass
-class User:
-
-    uuid: int
-    username: str
-    score: int
-    allowmoderator: bool
-    rankexempt: bool
-
-    def __str__(self):
-        return f"{self.username}{{UUID: {self.uuid}, Score: {self.score}, AllowModerator: {self.allowmoderator}, RankExempt: {self.rankexempt}}}"
-
-    
-    def change_score(self, delta):
-        if (self.score + delta > MAX_SCORE):
-            self.score = MAX_SCORE
-        elif (self.score + delta < 0):
-            self.score = 0
-        else:
-            self.score += delta
-
-        write_database()
+def add_all_users(guild):
+    for member in guild.members:
+        add_user(member.id)
 
 
-def change_all_scores(delta):
-    for user in USERS.values():
-        user.change_score(delta)
-        
-    
-    write_database()
+def add_user(snowflake):
+    cur.execute("INSERT OR IGNORE INTO users VALUES (?, ?);", 
+                 (snowflake, 0))
+    conn.commit()
 
 
-def add_user(uuid, username, score=0, allowmoderator=True, rankexempt=False):
-    newUser = User(uuid, username, score, allowmoderator, rankexempt)
-    USERS[uuid] = newUser
+def change_user_score(snowflake, delta):
+    cur.execute("""
+    UPDATE users
+    SET score = 
+        ( CASE
+            WHEN (score + ?) > ? THEN ?
+            WHEN (score + ?) < 0 THEN 0
+            ELSE score + ?
+          END 
+        )
+    WHERE
+        snowflake = ?
+        """, 
+        (delta, MAX_SCORE, MAX_SCORE, delta, delta, snowflake))
+    conn.commit()
 
 
-def write_database():
-    with open('data/users.csv', mode='w', encoding='utf-8') as dataFile:
-        fieldnames = ['uuid', 'username', 'score', 'allowmoderator', 'rankexempt']
-        writer = csv.DictWriter(dataFile, fieldnames=fieldnames, lineterminator = '\n')
-
-        writer.writeheader()
-        for user in USERS.values():
-            writer.writerow({
-                'uuid': user.uuid, 
-                'username': user.username, 
-                'score': user.score, 
-                'allowmoderator': user.allowmoderator, 
-                'rankexempt': user.rankexempt})
-
-
-def read_database():
-    with open('data/users.csv', mode='r', encoding='utf-8') as dataFile:
-        dataFile = csv.DictReader(dataFile)
-        for row in dataFile:
-            user = User(int(row['uuid']), row['username'], int(row['score']), bool(row['allowmoderator']), (row['rankexempt']))
-            USERS[int(row['uuid'])] = user
-
-
-def print_database():
-    for user in USERS.values():
-            print(user)
+def init():
+    global conn
+    global cur
+    conn = sqlite3.connect(USER_DATABSE)
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS users(
+        snowflake INT PRIMARY KEY,
+        score int);
+        """)
+    conn.commit()
 
 
 def main():
-    read_database()
-    print_database()
-    write_database()
+    init()
 
 
 if __name__ == "__main__":

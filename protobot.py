@@ -48,7 +48,7 @@ DAD_JOKE_CHANCE = 10            #
 
 
 # Initialize bot object to use the COMMAND_PREFIX defined above
-bot = commands.Bot(command_prefix=COMMAND_PREFIX)
+bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=discord.Intents.all())
 
 
 @bot.event
@@ -61,6 +61,9 @@ async def on_connect():
     logging.warning(f'{bot.user.name} {VERSION} has successfully connected to Discord.')
     status = discord.Activity(name=STATUS, type=ACTIVITY_TYPE)
     await bot.change_presence(activity=status)
+
+    # Initialize activity module
+    activity.init()
 
 
 @bot.event
@@ -75,11 +78,7 @@ async def on_ready():
     for guild in bot.guilds:
         label = guild.name + " (" + str(guild.id) + ")"
         logging.info(label)
-
-    activity.read_database()
-
-    for guild in bot.guilds:
-        add_all_users_from_guild_to_database(guild)
+        activity.add_all_users(guild)
 
     # Start scheduled events
     logging.info("Scheduling events...")
@@ -111,7 +110,8 @@ async def on_guild_join(guild):
 
     logging.warning(f"Joined new guild: {guild.name + ' (' + str(guild.id) + ')'}")
 
-    add_all_users_from_guild_to_database(guild)
+    for member in guild.members:
+        activity.add_all_users(guild)
 
 
 @bot.event
@@ -120,7 +120,7 @@ async def on_member_join(member):
     Direct-messages a user whenever the join a server (disabled)
     """
 
-    add_user_to_database(member.id, member.name)
+    add_user(member.id)
 
 
 @bot.event
@@ -183,7 +183,7 @@ async def on_message(message):
             await message.channel.set_permissions(message.guild.default_role, send_messages = False)
 
     if message.content[0] != "!":
-        change_user_score(message.author.id, POINTS_PER_MESSAGE)
+        activity.change_user_score(message.author.id, POINTS_PER_MESSAGE)
 
     if 'happy birthday' in message.content.lower():
         """
@@ -238,12 +238,12 @@ async def on_message(message):
 async def check_user_score(ctx):
     if (ctx.message.mentions == []):
         uuid = ctx.message.author.id
-        score = get_user_score(uuid)
+        score = activity.get_user_score(uuid)
         await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
     else:
         for user in ctx.message.mentions:
             uuid = user.id
-            score = get_user_score(uuid)
+            score = activity.get_user_score(uuid)
             await ctx.message.channel.send(f"Score for <@{uuid}>: {score}")
 
 
@@ -471,7 +471,7 @@ def run_once_every_minute():
     for guild in bot.guilds:
         for channel in guild.voice_channels:
             for user in channel.members:
-                change_user_score(user.id, POINTS_PER_MINUTE_TALKING)
+                activity.change_user_score(user.id, POINTS_PER_MINUTE_TALKING)
 
 
 def run_once_every_hour():
@@ -479,37 +479,17 @@ def run_once_every_hour():
     Runs a block of code every hour.
     """
 
-    activity.change_all_scores(-POINT_DECAY_PER_HOUR)
+    snowflakes = []
+    
+    for guild in bot.guilds:
+        for member in guild.members:
+            snowflakes.append(member.id)
 
+    # Remove duplicate users
+    snowflakes = list(dict.fromkeys(snowflakes))
 
-def change_user_score(uuid, delta):
-    if (uuid in activity.USERS.keys()):
-        activity.USERS[uuid].change_score(delta)
-    else:
-        logging.error(f"Attempted to change score of user {uuid} when user is not in database.")
-
-
-def get_user_score(uuid):
-    if (uuid in activity.USERS.keys()):
-        return activity.USERS[uuid].score
-    else:
-        logging.error(f"Attempted to get score of user {uuid} when user is not in database.")
-
-
-def add_all_users_from_guild_to_database(guild):
-    for user in guild.members:
-        if (not user.bot):
-            add_user_to_database(user.id, user.name)
-
-    activity.write_database()
-
-
-def add_user_to_database(uuid, name, score=0, allowmoderator=True, rankexempt=False):
-    if (not uuid in activity.USERS.keys()):
-                activity.add_user(uuid, name, score, allowmoderator, rankexempt)
-                logging.info(f"Registered new user {name} ({uuid}) to database.")
-
-    activity.write_database()
+    for snowflake in snowflakes:
+        activity.change_user_scores(snowflake, -POINT_DECAY_PER_HOUR)
 
 
 def schedule_worker():

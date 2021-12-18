@@ -410,7 +410,7 @@ async def poll(ctx):
             # Check for ties
             tie = False
             for result in results.keys():
-                if results[result] == results[winner]:
+                if results[result] == results[winner] and result != winner:
                     tie = True
 
             # If there's a tie, find out which results tied and make a string out of them, then print results

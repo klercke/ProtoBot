@@ -26,14 +26,15 @@ import sqlite3                      #
 #####################################
 
 
-#####################################
-                                    #
-COMMAND_PREFIX = '!'                #
-VERSION = "v0.6.0-alpha"            #
-ACTIVITY = discord.Game("!help")    #
-LOG_LEVEL = logging.INFO            #
-                                    #
-#####################################
+#################################################
+                                                #
+COMMAND_PREFIX = '!'                            #
+VERSION = "v0.6.0-alpha"                        #
+STATUS = "you in your sleep"                    #
+ACTIVITY_TYPE = discord.ActivityType.watching   #
+LOG_LEVEL = logging.INFO                        #
+                                                #
+#################################################
 
 
 #################################
@@ -58,7 +59,8 @@ async def on_connect():
     """
 
     logging.warning(f'{bot.user.name} {VERSION} has successfully connected to Discord.')
-    await bot.change_presence(activity = ACTIVITY)
+    status = discord.Activity(name=STATUS, type=ACTIVITY_TYPE)
+    await bot.change_presence(activity=status)
 
 
 @bot.event
@@ -115,27 +117,10 @@ async def on_guild_join(guild):
 @bot.event
 async def on_member_join(member):
     """
-    Direct-messages a user whenever the join a server
+    Direct-messages a user whenever the join a server (disabled)
     """
 
-    await member.create_dm()
-    if (member.guild.id == 150717946333888514):
-        welcome_message = (
-            f"Hi {member.name}, welcome to Lounge server. Please set your "
-            "nickname to match the naming scheme used on the server. For example, if "
-            "my name was John, my nickname would be \"ProtoBot | John\". Please also "
-            "make sure to read any messages pinned in the #important channel."
-        )
-
-    elif (member.guild.id == 720996920939642912):
-        welcome_message = f"Welcome to the ProtoBot development server, {member.name}!"
-
-    else:
-        welcome_message = f"Welcome to {member.guild.name}, {member.name}!"
-
     add_user_to_database(member.id, member.name)
-
-    await member.dm_channel.send(welcome_message)
 
 
 @bot.event

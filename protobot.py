@@ -267,6 +267,13 @@ async def nice(ctx):
     await ctx.message.channel.send(file=discord.File('resources/nice.png'))
 
 
+@bot.command(name="kick", help="Sends willsballs.png if Arrowboy is mentioned")
+async def kickwill(ctx):
+    for member in ctx.message.mentions:
+        if member.id == 175772212547026944:
+            await ctx.message.channel.send(file=discord.File('resources/willsballs.png'))
+    
+
 @bot.command(name="based", help="Uses a complex algorithm to determine whether or not a user is based.")
 async def based(ctx):
     ways_to_say_based = [

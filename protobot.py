@@ -231,6 +231,10 @@ async def on_message(message):
                         # Don't tell a joke
                         break
 
+    elif 'thanks protobot' in message.content.lower():
+        response = "Happy to help."
+        await message.channel.send(response)
+
     await bot.process_commands(message)
 
 

@@ -323,10 +323,10 @@ async def poll(ctx):
         count = 0
         for character in user_input:
             count += 1
-            if not writing and character == "\"":
+            if not writing and character in ["\"", "“"]:
                 writing = True
             elif writing:
-                if character == "\"":
+                if character in ["\"", "”"]:
                     writing = False
                     break
                 else:

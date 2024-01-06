@@ -1,48 +1,50 @@
-use std::env;
+mod commands;
 
 use dotenv;
+use poise::serenity_prelude as serenity;
+use std::{
+    collections::HashMap,
+    env,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use serenity::async_trait;
-use serenity::prelude::*;
-use serenity::model::channel::Message;
-use serenity::framework::standard::macros::{command, group};
-use serenity::framework::standard::{StandardFramework, Configuration, CommandResult};
-
-#[group]
-#[commands(ping)]
-struct General;
-
-struct Handler;
-
-#[async_trait]
-impl EventHandler for Handler {}
+struct Data {} // User data
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Context<'a> = poise::Context<'a, Data, Error>;
 
 #[tokio::main]
 async fn main() {
-    let framework = StandardFramework::new().group(&GENERAL_GROUP);
-    // Set command prefix to "!"
-    framework.configure(Configuration::new().prefix("!"));
-
     // Load variables from .env file
     dotenv::dotenv().ok();
 
-    // Log in with bot token from .env
-    let token = env::var("DISCORD_TOKEN").expect("Error reading bot token");
-    let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
-    let mut client = Client::builder(token, intents)
-        .event_handler(Handler)
-        .framework(framework)
-        .await.expect("Error creating client");
+    // Load bot token from environment variables
+    let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");
+    
+    // Set bot intents
+    let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
-    // Create a single shard and start listening for events
-    if let Err(why) = client.start().await {
-        println!("An error occurred while running the client: {:?}", why);
-    }
-}
+    let framework = poise::Framework::builder()
+    .options(poise::FrameworkOptions {
+        commands: vec![commands::age(), commands::help(), commands::ping(), commands::about()],
+        prefix_options: poise::PrefixFrameworkOptions {
+            prefix: Some("!".into()),
+            additional_prefixes: vec![
+                poise::Prefix::Literal("hey protobot"),
+                poise::Prefix::Literal("hey protobot,"),
+            ],
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .token(token)
+    .intents(intents)
+    .setup(|ctx, _ready, framework| {
+        Box::pin(async move {
+            poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+            Ok(Data {})
+        })
+    });
 
-#[command]
-async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.reply(ctx, "Pong!").await?;
-
-    Ok(())
+    framework.run().await.unwrap();
 }

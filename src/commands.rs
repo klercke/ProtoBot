@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use crate::{Context, Error};
 
 use poise::serenity_prelude as serenity;
@@ -16,7 +14,8 @@ pub async fn help(
         ctx,
         command.as_deref(),
         poise::builtins::HelpConfiguration {
-            extra_text_at_bottom: "Additional documentation can be found at https://github.com/klercke/ProtoBot",
+            extra_text_at_bottom:
+                "Additional documentation can be found at https://github.com/klercke/ProtoBot",
             ..Default::default()
         },
     )
@@ -26,9 +25,7 @@ pub async fn help(
 
 /// Pong!
 #[poise::command(slash_command, prefix_command)]
-pub async fn ping(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     let response = "Pong!";
     ctx.say(response).await?;
     Ok(())
@@ -48,9 +45,7 @@ pub async fn age(
 
 /// Prints some information about the bot
 #[poise::command(slash_command, prefix_command)]
-pub async fn about(
-    ctx: Context<'_>,
-) -> Result<(), Error> {
+pub async fn about(ctx: Context<'_>) -> Result<(), Error> {
     let mut response = String::from("ProtoBot v");
     response.push_str(env!("CARGO_PKG_VERSION"));
     response.push_str(". Source code and bug tracker: https://github.com/klercke/ProtoBot");

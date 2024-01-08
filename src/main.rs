@@ -1,12 +1,15 @@
+// Import bot commands
 mod commands;
 
+// Simple imports
 use dotenv;
 use poise::serenity_prelude as serenity;
+use tracing::{debug, error, info};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::{filter::{filter_fn, LevelFilter}, prelude::*};
 use std::{
-    collections::HashMap,
     env,
-    sync::{Arc, Mutex},
-    time::Duration,
+    fs::create_dir, io::stdout,
 };
 
 struct Data {} // User data
@@ -15,6 +18,30 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 #[tokio::main]
 async fn main() {
+    // Create logs directory
+    create_dir("logs");
+    
+    let file_appender = RollingFileAppender::builder()
+        .rotation(Rotation::HOURLY)
+        .filename_prefix("protobot")
+        .filename_suffix("log")
+        .build("logs/")
+        .expect("Failed to create logfile appender!");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let stdout_logger = tracing_subscriber::fmt::layer()
+        .compact()
+        .with_filter(LevelFilter::INFO);
+    let file_logger = tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking)
+        .json()
+        .with_filter(LevelFilter::INFO);
+    tracing_subscriber::registry()
+        .with(stdout_logger)
+        .with(file_logger)
+        .init();
+
+    info!("Hello, ProtoBot here!"); 
+
     // Load variables from .env file
     dotenv::dotenv().ok();
 

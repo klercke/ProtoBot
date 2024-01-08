@@ -31,8 +31,8 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Displays your or another user's account creation date
-#[poise::command(slash_command, prefix_command)]
+/// Sends a message containing the timestamp of when you or another user's account was created
+#[poise::command(slash_command, prefix_command, track_edits)]
 pub async fn age(
     ctx: Context<'_>,
     #[description = "Selected user"] user: Option<serenity::User>,
@@ -43,12 +43,19 @@ pub async fn age(
     Ok(())
 }
 
-/// Prints some information about the bot
+/// Prints some information about ProtoBot
 #[poise::command(slash_command, prefix_command)]
 pub async fn about(ctx: Context<'_>) -> Result<(), Error> {
     let mut response = String::from("ProtoBot v");
     response.push_str(env!("CARGO_PKG_VERSION"));
     response.push_str(". Source code and bug tracker: https://github.com/klercke/ProtoBot");
     ctx.say(response).await?;
+    Ok(())
+}
+
+/// Spawns buttons to register and deregister commands
+#[poise::command(slash_command, prefix_command, owners_only, hide_in_help)]
+pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
+    poise::builtins::register_application_commands_buttons(ctx).await?;
     Ok(())
 }

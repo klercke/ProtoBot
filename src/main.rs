@@ -23,6 +23,7 @@ async fn main() {
         Err(e) => error!("Failed to create logs directory: {e}"),
     }
     
+    // Set up logging
     let file_appender = RollingFileAppender::builder()
         .rotation(Rotation::HOURLY)
         .filename_prefix("protobot")
@@ -42,6 +43,7 @@ async fn main() {
         .with(file_logger)
         .init();
 
+    // Say hi :)
     info!("Hello, ProtoBot here!"); 
 
     // Load variables from .env file
@@ -53,14 +55,15 @@ async fn main() {
     // Set bot intents
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
+    // Build the framework for the bot
     let framework = poise::Framework::builder()
     .options(poise::FrameworkOptions {
-        commands: vec![commands::age(), commands::help(), commands::ping(), commands::about()],
+        commands: vec![commands::age(), commands::help(), commands::ping(), commands::about(), commands::register()],
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: Some("!".into()),
             additional_prefixes: vec![
-                poise::Prefix::Literal("hey protobot"),
                 poise::Prefix::Literal("hey protobot,"),
+                poise::Prefix::Literal("hey protobot"),
             ],
             ..Default::default()
         },
@@ -74,6 +77,9 @@ async fn main() {
             Ok(Data {})
         })
     });
+    debug!("Framework configuration done");
 
+    // Build and run the framework
     framework.run().await.unwrap();
+
 }

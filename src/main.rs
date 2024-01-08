@@ -1,19 +1,26 @@
 // Import bot commands
 mod commands;
 
-// Simple imports
-use poise::serenity_prelude as serenity;
+// Imports
+use poise::{serenity_prelude as serenity, framework};
 use tracing::{error, warn, info, debug};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 use std::{
     env,
     fs::create_dir,
+    sync::atomic::{AtomicU32, Ordering}
 };
 
-struct Data {} // User data
+// Types used by command functions
 type Error = Box<dyn std::error::Error + Send + Sync>;
+#[allow(unused)]
 type Context<'a> = poise::Context<'a, Data, Error>;
+
+// Custom user data to pass to command functions
+struct Data {
+} 
+
 
 #[tokio::main]
 async fn main() {
@@ -54,11 +61,17 @@ async fn main() {
     
     // Set bot intents
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
-
+    
     // Build the framework for the bot
     let framework = poise::Framework::builder()
     .options(poise::FrameworkOptions {
-        commands: vec![commands::age(), commands::help(), commands::ping(), commands::about(), commands::register()],
+        commands: vec![
+            commands::age(),
+            commands::help(),
+            commands::ping(),
+            commands::about(),
+            commands::register(),
+        ],
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: Some("!".into()),
             additional_prefixes: vec![
@@ -67,19 +80,52 @@ async fn main() {
             ],
             ..Default::default()
         },
+        event_handler: |ctx, event, framework, data| {
+            Box::pin(event_handler(ctx, event, framework, data))
+        },
         ..Default::default()
     })
-    .token(token)
-    .intents(intents)
     .setup(|ctx, _ready, framework| {
         Box::pin(async move {
             poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-            Ok(Data {})
+            Ok(Data {
+            })
         })
-    });
-    debug!("Framework configuration done");
+    })
+    .build();
+    debug!("Framework building done");
+    
+    // Build client from framework
+    let client = serenity::ClientBuilder::new(token, intents)
+        .framework(framework)
+        .await;
+    debug!("Client creation done!");
 
     // Build and run the framework
-    framework.run().await.unwrap();
+    client.unwrap().start().await.unwrap();
+    debug!("Client started!");
 
+}
+
+async fn event_handler(
+    ctx: &serenity::Context,
+    event: &serenity::FullEvent,
+    _framework: poise::FrameworkContext<'_, Data, Error>,
+    data: &Data,
+) -> Result<(), Error> {
+    match event {
+        serenity::FullEvent::Ready { data_about_bot, .. } => {
+            info!("Successfully authenticated to Discord as {}", data_about_bot.user.name);
+        }
+        serenity::FullEvent::Message { new_message } => {
+            // extremely basic "I'm dad" detection
+            if new_message.content.to_lowercase().contains("im") {
+                new_message
+                    .reply(ctx, format!("Hi! I'm dad!"))
+                    .await?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }

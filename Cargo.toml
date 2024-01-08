@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 dotenv = "0.15.0"
-poise = "0.5.7"
+poise = { version = "0.6.1-rc1" }
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.40"
 tracing-appender = "0.2.3"

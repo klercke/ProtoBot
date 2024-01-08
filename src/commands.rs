@@ -3,7 +3,7 @@ use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
 
 /// Show the help menu
-#[poise::command(prefix_command, track_edits, slash_command)]
+#[poise::command(prefix_command, invoke_on_edit, slash_command)]
 pub async fn help(
     ctx: Context<'_>,
     #[description = "Specific command to show help about"]
@@ -32,7 +32,7 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// Sends a message containing the timestamp of when you or another user's account was created
-#[poise::command(slash_command, prefix_command, track_edits)]
+#[poise::command(slash_command, prefix_command, invoke_on_edit)]
 pub async fn age(
     ctx: Context<'_>,
     #[description = "Selected user"] user: Option<serenity::User>,

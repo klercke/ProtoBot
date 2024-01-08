@@ -2,14 +2,13 @@
 mod commands;
 
 // Simple imports
-use dotenv;
 use poise::serenity_prelude as serenity;
-use tracing::{debug, error, info};
+use tracing::{error, warn, info, debug};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{filter::{filter_fn, LevelFilter}, prelude::*};
+use tracing_subscriber::{filter::LevelFilter, prelude::*};
 use std::{
     env,
-    fs::create_dir, io::stdout,
+    fs::create_dir,
 };
 
 struct Data {} // User data
@@ -19,7 +18,10 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 #[tokio::main]
 async fn main() {
     // Create logs directory
-    create_dir("logs");
+    match create_dir("logs") {
+        Ok(_) => (),
+        Err(e) => error!("Failed to create logs directory: {e}"),
+    }
     
     let file_appender = RollingFileAppender::builder()
         .rotation(Rotation::HOURLY)

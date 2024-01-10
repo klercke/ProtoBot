@@ -2,14 +2,14 @@
 mod commands;
 
 // Imports
-use poise::{serenity_prelude as serenity, framework};
+use poise::serenity_prelude::{self as serenity, ActivityData};
 use tracing::{error, warn, info, debug};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
+use regex::Regex;
 use std::{
     env,
     fs::create_dir,
-    sync::atomic::{AtomicU32, Ordering}
 };
 
 // Types used by command functions
@@ -116,14 +116,29 @@ async fn event_handler(
     match event {
         serenity::FullEvent::Ready { data_about_bot, .. } => {
             info!("Successfully authenticated to Discord as {}", data_about_bot.user.name);
+            
+            // Set Discord status for the bot
+            let bot_status_message = format!("ProtoBot v{}: Rewritten in Rust!", env!("CARGO_PKG_VERSION"));
+            ctx.set_activity(Some(ActivityData::custom(&bot_status_message)));
+            debug!("Set bot message to \"{}\"", bot_status_message);
         }
         serenity::FullEvent::Message { new_message } => {
-            // extremely basic "I'm dad" detection
-            if new_message.content.to_lowercase().contains("im") {
-                new_message
-                    .reply(ctx, format!("Hi! I'm dad!"))
-                    .await?;
+            // Tell the bot to ignore its own messages (to prevent loops)
+            if (new_message.is_own(ctx)) {
+                debug!("Ignoring message sent by self");
+                return Ok(());
             }
+
+            // Hi x, I'm dad!
+            debug!("Checking message for any potential dad jokes");
+            // This will capture any text after "i am", "i'm", or "im", stopping the capture on punctuation or a newline 
+            let im_dad_regex = Regex::new(r#"(?i)(?:\b|^)(?:i['´`‘’]?m|i am)\b(.+?)(?:[\n.,;!?]|$)"#).unwrap();
+            if let Some(caps) = im_dad_regex.captures(&new_message.content) {
+                let captured_text = caps.get(1).map_or("", |m| m.as_str().trim());
+                debug!("Found dad joke: {}", captured_text);
+                new_message.reply(ctx, format!("Hi {}, I'm dad!", captured_text)).await?;
+            }
+
         }
         _ => {}
     }

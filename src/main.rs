@@ -3,7 +3,7 @@ mod commands;
 
 // Imports
 use poise::serenity_prelude::{self as serenity, ActivityData};
-use tracing::{error, warn, info, debug};
+use tracing::{error, info, debug};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 use regex::Regex;
@@ -111,7 +111,7 @@ async fn event_handler(
     ctx: &serenity::Context,
     event: &serenity::FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
-    data: &Data,
+    _data: &Data,
 ) -> Result<(), Error> {
     match event {
         serenity::FullEvent::Ready { data_about_bot, .. } => {
@@ -124,7 +124,7 @@ async fn event_handler(
         }
         serenity::FullEvent::Message { new_message } => {
             // Tell the bot to ignore its own messages (to prevent loops)
-            if (new_message.is_own(ctx)) {
+            if new_message.is_own(ctx) {
                 debug!("Ignoring message sent by self");
                 return Ok(());
             }

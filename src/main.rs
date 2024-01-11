@@ -120,7 +120,7 @@ async fn event_handler(
             // Set Discord status for the bot
             let bot_status_message = format!("ProtoBot v{}: Rewritten in Rust!", env!("CARGO_PKG_VERSION"));
             ctx.set_activity(Some(ActivityData::custom(&bot_status_message)));
-            debug!("Set bot message to \"{}\"", bot_status_message);
+            info!("Set bot status to \"{}\"", bot_status_message);
         }
         serenity::FullEvent::Message { new_message } => {
             // Tell the bot to ignore its own messages (to prevent loops)
@@ -130,15 +130,21 @@ async fn event_handler(
             }
 
             // Hi x, I'm dad!
-            debug!("Checking message for any potential dad jokes");
             // This will capture any text after "i am", "i'm", or "im", stopping the capture on punctuation or a newline 
             let im_dad_regex = Regex::new(r#"(?i)(?:\b|^)(?:i['´`‘’]?m|i am)\b(.+?)(?:[\n.,;!?]|$)"#).unwrap();
             if let Some(caps) = im_dad_regex.captures(&new_message.content) {
                 let captured_text = caps.get(1).map_or("", |m| m.as_str().trim());
-                debug!("Found dad joke: {}", captured_text);
+                info!("Found dad joke: I'm {}", captured_text);
                 new_message.reply(ctx, format!("Hi {}, I'm dad!", captured_text)).await?;
             }
-
+            
+            // Happy birthday messages
+            if new_message.content.to_lowercase().contains("happy birthday") {
+                for user in &new_message.mentions {
+                    info!("Wishing happy birthday to {} ({})", user.name, user.id);
+                    new_message.channel_id.say(&ctx.http, format!("Happy birthday <@{}>! 🎈🎉🎂", user.id)).await?;
+                }
+            }
         }
         _ => {}
     }

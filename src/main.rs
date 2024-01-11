@@ -144,7 +144,12 @@ async fn event_handler(
                 if let Some(caps) = im_dad_regex.captures(&new_message.content) {
                     let captured_text = caps.get(1).map_or("", |m| m.as_str().trim());
                     info!("Found dad joke: I'm {}", captured_text);
-                    new_message.reply(ctx, format!("Hi {}, I'm dad!", captured_text)).await?;
+                    if captured_text.to_lowercase() == "dad" {
+                        new_message.reply(ctx, "Whatever you say, champ 😉").await?;
+                    }
+                    else {
+                        new_message.reply(ctx, format!("Hi {}, I'm dad!", captured_text)).await?;
+                    }
                 }
             }
             

@@ -39,7 +39,7 @@ pub async fn age(
 ) -> Result<(), Error> {
     let u = user.as_ref().unwrap_or_else(|| ctx.author());
     let response = format!("{}'s account was created at {}", u.name, u.created_at());
-    ctx.say(response).await?;
+    ctx.reply(response).await?;
     Ok(())
 }
 
@@ -57,5 +57,61 @@ pub async fn about(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command, prefix_command, owners_only, hide_in_help)]
 pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
     poise::builtins::register_application_commands_buttons(ctx).await?;
+    Ok(())
+}
+
+/// Deprecated
+#[poise::command(prefix_command, hide_in_help)]
+pub async fn correct(ctx: Context<'_>) -> Result<(), Error> {
+    let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
+    ctx.reply(response).await?;
+    Ok(())
+}
+
+/// Deprecated
+#[poise::command(prefix_command, hide_in_help)]
+pub async fn kick(ctx: Context<'_>) -> Result<(), Error> {
+    let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
+    ctx.reply(response).await?;
+    Ok(())
+}
+
+/// Deprecated
+#[poise::command(prefix_command, hide_in_help)]
+pub async fn nice(ctx: Context<'_>) -> Result<(), Error> {
+    let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
+    ctx.reply(response).await?;
+    Ok(())
+}
+
+/// Deprecated
+#[poise::command(prefix_command, hide_in_help)]
+pub async fn score(ctx: Context<'_>) -> Result<(), Error> {
+    let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
+    ctx.reply(response).await?;
+    Ok(())
+}
+
+/// Deprecated
+#[poise::command(prefix_command, hide_in_help)]
+pub async fn strange(ctx: Context<'_>) -> Result<(), Error> {
+    let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
+    ctx.reply(response).await?;
+    Ok(())
+}
+
+/// Deprecated
+#[poise::command(prefix_command, hide_in_help)]
+pub async fn tex(ctx: Context<'_>) -> Result<(), Error> {
+    let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
+    ctx.reply(response).await?;
+    Ok(())
+}
+
+/// Deprecated
+#[poise::command(prefix_command, hide_in_help)]
+pub async fn what(ctx: Context<'_>) -> Result<(), Error> {
+    let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
+    ctx.reply(response).await?;
     Ok(())
 }

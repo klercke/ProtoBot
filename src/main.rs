@@ -11,6 +11,11 @@ use std::{
     env,
     fs::create_dir,
 };
+use rand::{
+    Rng,
+    SeedableRng,
+    rngs::SmallRng,
+};
 
 // Types used by command functions
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -132,10 +137,15 @@ async fn event_handler(
             // Hi x, I'm dad!
             // This will capture any text after "i am", "i'm", or "im", stopping the capture on punctuation or a newline 
             let im_dad_regex = Regex::new(r#"(?i)(?:\b|^)(?:i['´`‘’]?m|i am)\b(.+?)(?:[\n.,;!?]|$)"#).unwrap();
-            if let Some(caps) = im_dad_regex.captures(&new_message.content) {
-                let captured_text = caps.get(1).map_or("", |m| m.as_str().trim());
-                info!("Found dad joke: I'm {}", captured_text);
-                new_message.reply(ctx, format!("Hi {}, I'm dad!", captured_text)).await?;
+            // Dad jokes have a 1 in dad_joke_chance chance of ocurring
+            let dad_joke_chance = 10;
+            let mut dad_joke_rng = SmallRng::from_entropy();
+            if dad_joke_rng.gen_range(1 ..= dad_joke_chance) == 1 {
+                if let Some(caps) = im_dad_regex.captures(&new_message.content) {
+                    let captured_text = caps.get(1).map_or("", |m| m.as_str().trim());
+                    info!("Found dad joke: I'm {}", captured_text);
+                    new_message.reply(ctx, format!("Hi {}, I'm dad!", captured_text)).await?;
+                }
             }
             
             // Happy birthday messages

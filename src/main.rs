@@ -76,6 +76,7 @@ async fn main() {
             commands::ping(),
             commands::about(),
             commands::register(),
+            commands::based(),
             commands::correct(),
             commands::kick(),
             commands::nice(),

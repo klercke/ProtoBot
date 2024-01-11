@@ -1,6 +1,11 @@
 use crate::{Context, Error};
 
 use poise::serenity_prelude as serenity;
+use rand::{
+    Rng,
+    SeedableRng,
+    rngs::SmallRng,
+};
 
 /// Show the help menu
 #[poise::command(prefix_command, invoke_on_edit, slash_command)]
@@ -50,6 +55,47 @@ pub async fn about(ctx: Context<'_>) -> Result<(), Error> {
     response.push_str(env!("CARGO_PKG_VERSION"));
     response.push_str(". Source code and bug tracker: https://github.com/klercke/ProtoBot");
     ctx.say(response).await?;
+    Ok(())
+}
+
+/// Uses a complex algorithm to determine whether or not a user is based
+#[poise::command(slash_command, prefix_command, owners_only, hide_in_help)]
+pub async fn based(
+    ctx: Context<'_>,
+    #[description = "Selected user"] user: Option<serenity::User>,
+) -> Result<(), Error> {
+    // Our dictionary of based (or not based) equivilants
+    let based_vec = vec![
+        "based.",
+        "based and redpilled.",
+        "based and Teddypilled.",
+        "based? Based on what?",
+        "based upon pillars of salt and pillars of sand.",
+        "not based.",
+        "cringe and bluepilled.",
+        "CEO of the Based Department.",
+        "enemy of the based.",
+        "all of your based are belong to us.",
+    ];
+    
+    // Define an RNG to choose a random option
+    let mut based_rng = SmallRng::from_entropy();
+    let based_idx = based_rng.gen_range(0..based_vec.len()); 
+
+    // "x is based." vs "based."
+    match user {
+        Some(user) => {
+            let response = format!("<@{}> is {}", user.id, based_vec[based_idx]);
+            ctx.reply(response).await?;
+        },
+        _ => {
+            let based_str = based_vec[based_idx];
+            // Capitalize the first letter of the response
+            let response = based_str[0..1].to_uppercase() + &based_str[1..];
+            ctx.reply(response).await?;
+        },
+    }
+
     Ok(())
 }
 

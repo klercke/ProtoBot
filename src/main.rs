@@ -168,8 +168,14 @@ async fn event_handler(
                     new_message.channel_id.say(&ctx.http, format!("Happy birthday <@{}>! 🎈🎉🎂", user.id)).await?;
                 }
             }
+
+            // Thanks ProtoBot
+            if new_message.content.to_lowercase().contains("thanks protobot") {
+                new_message.reply(&ctx.http, "Happy to help.").await?;
+            }
         }
         _ => {}
     }
     Ok(())
 }
+

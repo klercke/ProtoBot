@@ -1,5 +1,6 @@
 use crate::{Context, Error};
 
+use poise::serenity_prelude as serenity;
 use rusqlite::{self, OptionalExtension};
 use tracing::{debug, error, info, warn};
 
@@ -249,6 +250,7 @@ pub async fn santa_init(
     Ok(())
 }
 
+/// Sets the drawing and/or gifting time for the Secret Santa
 #[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
 pub async fn santa_set_times(
     ctx: Context<'_>,
@@ -320,6 +322,71 @@ pub async fn santa_set_times(
         draw_display, gift_display
     ))
     .await?;
+    Ok(())
+}
+
+/// Prints info about the current guild's Secret Santa event
+#[poise::command(slash_command, prefix_command)]
+pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a guild")?
+        .to_string();
+
+    let db = ctx.data().db.clone();
+    let db = db.lock().await;
+
+    let guild: Option<Guild> = {
+        let mut stmt = db.prepare(
+            "SELECT id, guild_id, draw_at, gift_at FROM santa_guilds WHERE guild_id = ?1",
+        )?;
+        stmt.query_row([&guild_id], |row| {
+            Ok(Guild {
+                id: row.get(0)?,
+                guild_id: row.get(1)?,
+                drawing_time: row.get(2)?,
+                gifting_time: row.get(3)?,
+            })
+        })
+        .optional()?
+    };
+
+    let guild = match guild {
+        Some(g) => g,
+        None => {
+            ctx.say("No Secret Santa event exists for this guild.")
+                .await?;
+            return Ok(());
+        }
+    };
+
+    // Fetch number of participants
+    let num_participants: i64 = db.query_row(
+        "SELECT COUNT(*) FROM santa_participants WHERE guild_id = ?1",
+        [&guild.id],
+        |row| row.get(0),
+    )?;
+
+    let draw_display = guild
+        .drawing_time
+        .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
+        .unwrap_or("not set".to_string());
+    let gift_display = guild
+        .gifting_time
+        .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
+        .unwrap_or("not set".to_string());
+
+    // Build and send response
+    let msg = format!(
+        "🎅🕵️ Secret Santa Info 🎄🎁\n\
+        **Draw Time:** {}\n\
+        **Gift Time:** {}\n\
+        **Participants:** {}",
+        draw_display, gift_display, num_participants
+    );
+
+    ctx.say(msg).await?;
+
     Ok(())
 }
 

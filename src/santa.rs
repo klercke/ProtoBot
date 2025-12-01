@@ -26,8 +26,8 @@ struct Assignment {
 struct Guild {
     id: i64,
     guild_id: String,
-    drawing_time: i64,
-    gifting_time: i64,
+    drawing_time: Option<i64>,
+    gifting_time: Option<i64>,
 }
 
 impl Participant {
@@ -141,7 +141,11 @@ impl Guild {
 
 /// Initialize a Secret Santa event in a server (requires Administrator permissions in the server).
 #[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
-pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn santa_init(
+    ctx: Context<'_>,
+    #[description = "The time that you will assign Santas (Unix timestamp)"] draw_at: Option<i64>,
+    #[description = "The time when gifts are to be sent (Unix timestamp)"] gift_at: Option<i64>,
+) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
         .ok_or("Command must be used in a guild")?
@@ -202,7 +206,7 @@ pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
     "#,
     )
     .map_err(|e| {
-        error!(?e, "Failed to create Secret Santa tables");
+        error!(?e, "Failed to create Secret Santa tables.");
         e
     })?;
 
@@ -214,12 +218,12 @@ pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
         )
         .optional()
         .map_err(|e| {
-            error!(?e, "Failed to query existing guilds");
+            error!(?e, "Failed to query existing servers!");
             e
         })?;
 
     if guild_exists.is_some() {
-        ctx.say("A Secret Santa already exists for this guild!")
+        ctx.say("A Secret Santa already exists for this server!")
             .await?;
         return Ok(());
     }
@@ -242,6 +246,80 @@ pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
         "Successfully initialized Secret Santa in guild {}",
         guild_id
     );
+    Ok(())
+}
+
+#[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
+pub async fn santa_set_times(
+    ctx: Context<'_>,
+    #[description = "Drawing time (Unix timestamp)"] draw_at: Option<i64>,
+    #[description = "Gifting time (Unix timestamp)"] gift_at: Option<i64>,
+) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a guild")?
+        .to_string();
+
+    let _ = ctx.channel_id().broadcast_typing(&ctx).await;
+    ctx.defer_ephemeral().await?;
+
+    let db = ctx.data().db.clone();
+    let db = db.lock().await;
+
+    let guild: Option<Guild> = {
+        let mut stmt = db.prepare(
+            "SELECT id, guild_id, draw_at, gift_at FROM santa_guilds WHERE guild_id = ?1",
+        )?;
+        stmt.query_row([&guild_id], |row| {
+            Ok(Guild {
+                id: row.get(0)?,
+                guild_id: row.get(1)?,
+                drawing_time: row.get(2)?,
+                gifting_time: row.get(3)?,
+            })
+        })
+        .optional()?
+    };
+
+    let mut guild = match guild {
+        Some(g) => g,
+        None => {
+            ctx.say("No Secret Santa event exists for this server! Run `/santa_init` first.")
+                .await?;
+            return Ok(());
+        }
+    };
+
+    // Update struct values
+    if let Some(ts) = draw_at {
+        guild.drawing_time = Some(ts);
+    }
+    if let Some(ts) = gift_at {
+        guild.gifting_time = Some(ts);
+    }
+
+    // Write updated times to DB
+    db.execute(
+        "UPDATE santa_guilds
+         SET draw_at = ?1, gift_at = ?2
+         WHERE id = ?3",
+        (&guild.drawing_time, &guild.gifting_time, &guild.id),
+    )?;
+
+    let draw_display = guild
+        .drawing_time
+        .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
+        .unwrap_or("not set".to_string());
+    let gift_display = guild
+        .gifting_time
+        .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
+        .unwrap_or("not set".to_string());
+
+    ctx.say(format!(
+        "Secret Santa times for this guild:\nDraw: {}\nGift: {}",
+        draw_display, gift_display
+    ))
+    .await?;
     Ok(())
 }
 

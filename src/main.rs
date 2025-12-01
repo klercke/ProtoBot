@@ -96,6 +96,7 @@ async fn main() {
                 commands::tex(),
                 commands::what(),
                 santa::santa_init(),
+                santa::santa_set_times(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".into()),

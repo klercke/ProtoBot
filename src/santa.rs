@@ -1,8 +1,7 @@
 use crate::{Context, Error};
 
-use poise::serenity_prelude::{self as serenity, model::guild};
 use rusqlite::{self, OptionalExtension};
-use tracing::{debug, info, error, warn};
+use tracing::{debug, error, info, warn};
 
 // Represents a Secret Santa participant (SQLite table santa_participants)
 #[derive(Debug)]
@@ -16,7 +15,7 @@ struct Participant {
 
 // Represents a Secret Santa assignment (SQLite table santa_assignments)
 #[derive(Debug)]
-struct  Assignment {
+struct Assignment {
     participant_id: i64,
     giftee_id: i64,
     assigned_at: i64,
@@ -35,13 +34,17 @@ impl Participant {
     fn insert(db: &rusqlite::Connection, p: &Participant) -> rusqlite::Result<i64> {
         db.execute(
             "INSERT INTO santa_participants (guild_id, user_id, registered_at, steam_code)
-            VALUES (?1, ?2, ?3, ?4)", 
+            VALUES (?1, ?2, ?3, ?4)",
             (&p.guild_id, &p.user_id, p.registered_at, &p.steam_code),
         )?;
         Ok(db.last_insert_rowid())
     }
 
-    fn get(db: &rusqlite::Connection, guild_id: &str, user_id: &str) -> rusqlite::Result<Option<Participant>> {
+    fn get(
+        db: &rusqlite::Connection,
+        guild_id: &str,
+        user_id: &str,
+    ) -> rusqlite::Result<Option<Participant>> {
         let mut stmt = db.prepare(
             "SELECT id, guild_id, user_id, registered_at, steam_code
             FROM santa_participants
@@ -76,11 +79,14 @@ impl Assignment {
         Ok(())
     }
 
-    fn get_for_participant(db: &rusqlite::Connection, participant_id: i64) -> rusqlite::Result<Option<Assignment>> {
+    fn get_for_participant(
+        db: &rusqlite::Connection,
+        participant_id: i64,
+    ) -> rusqlite::Result<Option<Assignment>> {
         let mut stmt = db.prepare(
             "SELECT participant_id, giftee_id, assigned_at
             FROM santa_assignments
-            WHERE participant_id = ?1"
+            WHERE participant_id = ?1",
         )?;
 
         let row = stmt.query_row([participant_id], |row| {
@@ -104,7 +110,7 @@ impl Guild {
         db.execute(
             "INSERT INTO santa_guilds (guild_id, drawing_time, gifting_time)
             VALUES (?1, ?2, ?3)",
-            (&guild.guild_id, guild.drawing_time, guild.gifting_time)
+            (&guild.guild_id, guild.drawing_time, guild.gifting_time),
         )?;
         Ok(db.last_insert_rowid())
     }
@@ -136,11 +142,16 @@ impl Guild {
 /// Initialize a Secret Santa event in a server (requires Administrator permissions in the server).
 #[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
 pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
-    let guild_id = ctx.guild_id()
+    let guild_id = ctx
+        .guild_id()
         .ok_or("Command must be used in a guild")?
         .to_string();
 
-    info!("Recieved request to initialize Secret Santa in guild {} by user {}", ctx.channel_id(), ctx.author());
+    info!(
+        "Recieved request to initialize Secret Santa in guild {} by user {}",
+        ctx.channel_id(),
+        ctx.author()
+    );
 
     let response = "Initializing secret santa for this server...";
     ctx.say(response).await?;
@@ -158,7 +169,8 @@ pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
 
     let now = chrono::Utc::now().timestamp();
 
-    db.execute_batch(r#"
+    db.execute_batch(
+        r#"
         CREATE TABLE IF NOT EXISTS santa_participants (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id        INTEGER NOT NULL
@@ -187,24 +199,28 @@ pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
             gift_at     INTEGER,
             created_at  INTEGER
         );
-    "#)
+    "#,
+    )
     .map_err(|e| {
         error!(?e, "Failed to create Secret Santa tables");
         e
     })?;
 
-    let guild_exists: Option<i64> = db.query_row(
-        "SELECT id FROM santa_guilds WHERE guild_id = ?1",
-        [&guild_id],
-        |row| row.get(0),
-    ).optional()
-    .map_err(|e| {
-        error!(?e, "Failed to query existing guilds");
-        e
-    })?;
+    let guild_exists: Option<i64> = db
+        .query_row(
+            "SELECT id FROM santa_guilds WHERE guild_id = ?1",
+            [&guild_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| {
+            error!(?e, "Failed to query existing guilds");
+            e
+        })?;
 
     if guild_exists.is_some() {
-        ctx.say("A Secret Santa already exists for this guild!").await?;
+        ctx.say("A Secret Santa already exists for this guild!")
+            .await?;
         return Ok(());
     }
 
@@ -213,13 +229,19 @@ pub async fn santa_init(ctx: Context<'_>) -> Result<(), Error> {
         (&guild_id, &now),
     )
     .map_err(|e| {
-        error!(?e, "Failed to insert guild into Secret Santa table for guild {}", guild_id);
+        error!(
+            ?e,
+            "Failed to insert guild into Secret Santa table for guild {}", guild_id
+        );
         e
     })?;
 
     debug!("Released database lock after Secret Santa initialization.");
     ctx.say("Secret Santa initialized for this server!").await?;
-    info!("Successfully initialized Secret Santa in guild {}", guild_id);
+    info!(
+        "Successfully initialized Secret Santa in guild {}",
+        guild_id
+    );
     Ok(())
 }
 

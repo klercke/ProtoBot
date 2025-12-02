@@ -11,7 +11,7 @@ struct Participant {
     guild_id: String,
     user_id: String,
     registered_at: i64,
-    steam_code: Option<String>,
+    steam: Option<String>,
 }
 
 // Represents a Secret Santa assignment (SQLite table santa_assignments)
@@ -34,9 +34,9 @@ struct Guild {
 impl Participant {
     fn insert(db: &rusqlite::Connection, p: &Participant) -> rusqlite::Result<i64> {
         db.execute(
-            "INSERT INTO santa_participants (guild_id, user_id, registered_at, steam_code)
+            "INSERT INTO santa_participants (guild_id, user_id, registered_at, steam)
             VALUES (?1, ?2, ?3, ?4)",
-            (&p.guild_id, &p.user_id, p.registered_at, &p.steam_code),
+            (&p.guild_id, &p.user_id, p.registered_at, &p.steam),
         )?;
         Ok(db.last_insert_rowid())
     }
@@ -47,7 +47,7 @@ impl Participant {
         user_id: &str,
     ) -> rusqlite::Result<Option<Participant>> {
         let mut stmt = db.prepare(
-            "SELECT id, guild_id, user_id, registered_at, steam_code
+            "SELECT id, guild_id, user_id, registered_at, steam
             FROM santa_participants
             WHERE guild_id = ?1 AND user_id = ?2",
         )?;
@@ -58,7 +58,7 @@ impl Participant {
                 guild_id: row.get(1)?,
                 user_id: row.get(2)?,
                 registered_at: row.get(3)?,
-                steam_code: row.get(4)?,
+                steam: row.get(4)?,
             })
         });
 
@@ -173,43 +173,6 @@ pub async fn santa_init(
     debug!("Acquired database lock for Secret Santa initialization.");
 
     let now = chrono::Utc::now().timestamp();
-
-    db.execute_batch(
-        r#"
-        CREATE TABLE IF NOT EXISTS santa_participants (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id        INTEGER NOT NULL
-                                REFERENCES santa_guilds(id)
-                                ON DELETE CASCADE,
-            user_id         TEXT NOT NULL,
-            registered_at   INTEGER NOT NULL,
-            steam_code      TEXT,
-            UNIQUE (guild_id, user_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS santa_assignments (
-            participant_id  INTEGER NOT NULL
-                                REFERENCES santa_participants(id)
-                                ON DELETE CASCADE,
-            giftee_id       INTEGER NOT NULL
-                                REFERENCES santa_participants(id)
-                                ON DELETE CASCADE,
-            PRIMARY KEY (participant_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS santa_guilds (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id    TEXT NOT NULL UNIQUE,
-            draw_at     INTEGER,
-            gift_at     INTEGER,
-            created_at  INTEGER
-        );
-    "#,
-    )
-    .map_err(|e| {
-        error!(?e, "Failed to create Secret Santa tables.");
-        e
-    })?;
 
     let guild_exists: Option<i64> = db
         .query_row(

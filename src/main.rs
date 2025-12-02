@@ -1,7 +1,6 @@
-// Import bot commands
+// Module imports
 mod commands;
-
-// Import Secret Santa module;
+mod db;
 mod santa;
 
 // Imports
@@ -64,12 +63,25 @@ async fn main() {
     dotenv::dotenv().ok();
 
     // Initialize database connection
-    let db = Connection::open(SQLITE_DB_PATH).expect("Database connection failed!");
+    let db = match Connection::open(SQLITE_DB_PATH) {
+        Ok(c) => c,
+        Err(e) => {
+            error!(?e, "Failed to connect to SQLite database");
+            panic!("DB connect failed");
+        }
+    };
+
+    if let Err(e) = db::init(&db) {
+        error!(?e, "Database initialization failed");
+        panic!("DB init failed");
+    }
 
     // Add database to bot data
     let data = BotData {
         db: Arc::new(Mutex::new(db)),
     };
+
+    info!("Database ready");
 
     // Load bot token from environment variables
     let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN");

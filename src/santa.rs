@@ -627,14 +627,67 @@ pub async fn santa_register(
         registered_at: Utc::now().timestamp(),
         steam: Some(steam_url.clone()),
     };
-
     Participant::insert(&db, &participant)?;
+
+    info!(
+        "User {} registered for Secret Santa in guild {}",
+        user_id, guild_id
+    );
 
     ctx.say(format!(
         "Successfully registered for Secret Santa! Your Steam profile: {}",
         steam_url
     ))
     .await?;
+
+    Ok(())
+}
+
+/// List all Secret Santa participants
+#[poise::command(slash_command, prefix_command)]
+pub async fn santa_list(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a server")?
+        .to_string();
+
+    // Get participants from the DB
+    let participants: Vec<(String, Option<String>)> = {
+        let db = ctx.data().db.clone();
+        let db = db.lock().await;
+
+        let mut stmt =
+            db.prepare("SELECT user_id, steam FROM santa_participants WHERE guild_id = ?1")?;
+        let rows = stmt.query_map([&guild_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    if participants.is_empty() {
+        ctx.say("No participants registered for Secret Santa.")
+            .await?;
+        return Ok(());
+    }
+
+    // Build messages, auto-split at 2000 chars
+    let mut msg = String::new();
+    for (user_id, steam) in participants {
+        let line = format!(
+            "- <@{}>: <{}>\n",
+            user_id,
+            steam.unwrap_or("No Steam URL".into())
+        );
+        if msg.len() + line.len() > 2000 {
+            ctx.say(&msg).await?;
+            msg.clear();
+        }
+        msg.push_str(&line);
+    }
+    if !msg.is_empty() {
+        ctx.say(&msg).await?;
+    }
 
     Ok(())
 }

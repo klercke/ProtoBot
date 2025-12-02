@@ -2,7 +2,7 @@ use rusqlite::{Connection, Result};
 use tracing::{error, info};
 
 pub fn init(conn: &Connection) -> Result<()> {
-    info!("initializing sqlite schema…");
+    info!("Initializing SQLite schema…");
 
     let res = conn.execute_batch(
         r#"

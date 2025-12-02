@@ -66,7 +66,7 @@ async fn main() {
     let db = match Connection::open(SQLITE_DB_PATH) {
         Ok(c) => c,
         Err(e) => {
-            error!(?e, "Failed to connect to SQLite database");
+            error!(?e, "Failed to connect to SQLite database (Hint: Make sure the `data/` directory exists)");
             panic!("DB connect failed");
         }
     };

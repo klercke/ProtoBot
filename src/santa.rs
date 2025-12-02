@@ -119,7 +119,7 @@ impl Guild {
     fn get(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Option<Guild>> {
         let mut stmt = db.prepare(
             "SELECT id, guild_id, drawing_time, gifting_time
-            FROM santa_servers
+            FROM santa_guilds
             WHERE guild_id = ?1",
         )?;
 

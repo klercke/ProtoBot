@@ -1,14 +1,14 @@
 use crate::{Context, Error};
 
 use chrono::{prelude::*, Duration};
-use poise::serenity_prelude::{self as serenity, CreateScheduledEvent, EditScheduledEvent};
+use poise::serenity_prelude::{self as serenity, CreateScheduledEvent};
+use regex::Regex;
 use rusqlite::{self, OptionalExtension};
 use tracing::{debug, error, info, warn};
 
 // Represents a Secret Santa participant (SQLite table santa_participants)
 #[derive(Debug)]
 struct Participant {
-    id: i64,
     guild_id: String,
     user_id: String,
     registered_at: i64,
@@ -57,7 +57,6 @@ impl Participant {
 
         let row = stmt.query_row([guild_id, user_id], |row| {
             Ok(Participant {
-                id: row.get(0)?,
                 guild_id: row.get(1)?,
                 user_id: row.get(2)?,
                 registered_at: row.get(3)?,
@@ -199,7 +198,7 @@ pub async fn santa_create(
 ) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
-        .ok_or("Command must be used in a guild")?
+        .ok_or("Command must be used in a server")?
         .to_string();
 
     info!(
@@ -346,7 +345,7 @@ pub async fn santa_set_time(
 ) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
-        .ok_or("Command must be used in a guild")?
+        .ok_or("Command must be used in a server")?
         .to_string();
 
     let _ = ctx.channel_id().broadcast_typing(&ctx).await;
@@ -434,7 +433,7 @@ pub async fn santa_set_time(
 pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
-        .ok_or("Command must be used in a guild")?
+        .ok_or("Command must be used in a server")?
         .to_string();
 
     let db = ctx.data().db.clone();
@@ -469,7 +468,7 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     // Fetch number of participants
     let num_participants: i64 = db.query_row(
         "SELECT COUNT(*) FROM santa_participants WHERE guild_id = ?1",
-        [&guild.id],
+        [&guild.guild_id],
         |row| row.get(0),
     )?;
 
@@ -518,19 +517,24 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
 pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
-        .ok_or("Command must be used in a guild")?
+        .ok_or("Command must be used in a server")?
         .to_string();
 
     let db = ctx.data().db.clone();
     let db = db.lock().await;
 
-    info!("User {} requested removal of Secret Santa event in guild {}", ctx.author().id, guild_id);
+    info!(
+        "User {} requested removal of Secret Santa event in guild {}",
+        ctx.author().id,
+        guild_id
+    );
 
     // Fetch guild row
     let guild = match Guild::get(&db, &guild_id)? {
         Some(g) => g,
         None => {
-            ctx.say("No Secret Santa event exists for this guild.").await?;
+            ctx.say("No Secret Santa event exists for this guild.")
+                .await?;
             return Ok(());
         }
     };
@@ -558,12 +562,12 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
         }
     }
 
-    debug!("Clearing Secret Santa rows from database for guild {}", guild_id);
+    debug!(
+        "Clearing Secret Santa rows from database for guild {}",
+        guild_id
+    );
     // Delete rows from DB
-    db.execute(
-        "DELETE FROM santa_guilds WHERE guild_id = ?1",
-        [&guild_id],
-    )?;
+    db.execute("DELETE FROM santa_guilds WHERE guild_id = ?1", [&guild_id])?;
     db.execute(
         "DELETE FROM santa_assignments WHERE participant_id IN (SELECT id FROM santa_participants WHERE guild_id = ?1)",
         [&guild_id],
@@ -574,14 +578,63 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
     )?;
 
     ctx.say("Secret Santa event deleted successfully!").await?;
-    info!("Successfully deleted Secret Santa event for guild {}", guild_id);
+    info!(
+        "Successfully deleted Secret Santa event for guild {}",
+        guild_id
+    );
 
     Ok(())
 }
 
+/// Register for the Secret Santa in this server
 #[poise::command(slash_command, prefix_command)]
-pub async fn santa_register(ctx: Context<'_>) -> Result<(), Error> {
-    let response = "Pong!";
-    ctx.say(response).await?;
+pub async fn santa_register(
+    ctx: Context<'_>,
+    #[description = "Your Steam profile URL"] steam_url: String,
+) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a server")?
+        .to_string();
+
+    let user_id = ctx.author().id.to_string();
+
+    // Validate URL (simple regex)
+    let steam_regex =
+        Regex::new(r"^https?://steamcommunity\.com/(id|profiles)/[a-zA-Z0-9_-]+/?$").unwrap();
+
+    if !steam_regex.is_match(&steam_url) {
+        ctx.say("Invalid Steam profile URL. It should look like `https://steamcommunity.com/id/yourname` or `https://steamcommunity.com/profiles/12345678901234567`")
+            .await?;
+        return Ok(());
+    }
+
+    // Get DB lock
+    let db = ctx.data().db.clone();
+    let db = db.lock().await;
+
+    // Check if user already registered
+    if let Some(_) = Participant::get(&db, &guild_id, &user_id)? {
+        ctx.say("You are already registered for Secret Santa in this server!")
+            .await?;
+        return Ok(());
+    }
+
+    // Insert participant
+    let participant = Participant {
+        guild_id: guild_id.clone(),
+        user_id: user_id.clone(),
+        registered_at: Utc::now().timestamp(),
+        steam: Some(steam_url.clone()),
+    };
+
+    Participant::insert(&db, &participant)?;
+
+    ctx.say(format!(
+        "Successfully registered for Secret Santa! Your Steam profile: {}",
+        steam_url
+    ))
+    .await?;
+
     Ok(())
 }

@@ -8,7 +8,7 @@ pub fn init(conn: &Connection) -> Result<()> {
         r#"
         CREATE TABLE IF NOT EXISTS santa_participants (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id        INTEGER NOT NULL
+            guild_id        TEXT NOT NULL
                                 REFERENCES santa_guilds(id)
                                 ON DELETE CASCADE,
             user_id         TEXT NOT NULL,

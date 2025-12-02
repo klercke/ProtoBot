@@ -1,6 +1,7 @@
 use crate::{Context, Error};
 
-use poise::serenity_prelude as serenity;
+use chrono::{prelude::*, Duration};
+use poise::serenity_prelude::{self as serenity, CreateScheduledEvent};
 use rusqlite::{self, OptionalExtension};
 use tracing::{debug, error, info, warn};
 
@@ -29,6 +30,8 @@ struct Guild {
     guild_id: String,
     drawing_time: Option<i64>,
     gifting_time: Option<i64>,
+    drawing_event_id: Option<String>,
+    gifting_event_id: Option<String>,
 }
 
 impl Participant {
@@ -118,9 +121,9 @@ impl Guild {
 
     fn get(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Option<Guild>> {
         let mut stmt = db.prepare(
-            "SELECT id, guild_id, drawing_time, gifting_time
+            r#"SELECT id, guild_id, drawing_time, gifting_time, drawing_event_id, gifting_event_id
             FROM santa_guilds
-            WHERE guild_id = ?1",
+            WHERE guild_id = ?1"#,
         )?;
 
         let row = stmt.query_row([guild_id], |row| {
@@ -129,6 +132,8 @@ impl Guild {
                 guild_id: row.get(1)?,
                 drawing_time: row.get(2)?,
                 gifting_time: row.get(3)?,
+                drawing_event_id: row.get(4)?,
+                gifting_event_id: row.get(5)?,
             })
         });
 
@@ -137,6 +142,51 @@ impl Guild {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    fn create(
+        db: &rusqlite::Connection,
+        guild_id: &str,
+        draw_at: Option<i64>,
+        gift_at: Option<i64>,
+        draw_event_id: Option<String>,
+        gift_event_id: Option<String>,
+    ) -> rusqlite::Result<i64> {
+        let now = chrono::Utc::now().timestamp();
+        db.execute(
+            "INSERT INTO santa_guilds (guild_id, draw_at, gift_at, created_at, drawing_event_id, gifting_event_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            (guild_id, draw_at, gift_at, now, draw_event_id, gift_event_id),
+        )?;
+        Ok(db.last_insert_rowid())
+    }
+
+    fn set_draw_event(
+        db: &rusqlite::Connection,
+        guild_id: &str,
+        event_id: &str,
+    ) -> rusqlite::Result<i64> {
+        db.execute(
+            "UPDATE santa_guilds
+            SET drawing_event_id = ?1
+            WHERE guild_id = ?2",
+            (&event_id, &guild_id),
+        )?;
+        Ok(db.last_insert_rowid())
+    }
+
+    fn set_gift_event(
+        db: &rusqlite::Connection,
+        guild_id: &str,
+        event_id: &str,
+    ) -> rusqlite::Result<i64> {
+        db.execute(
+            "UPDATE santa_guilds
+            SET gifting_event_id = ?1
+            WHERE guild_id = ?2",
+            (&event_id, &guild_id),
+        )?;
+        Ok(db.last_insert_rowid())
     }
 }
 
@@ -172,8 +222,7 @@ pub async fn santa_create(
     let db = db.lock().await;
     debug!("Acquired database lock for Secret Santa initialization");
 
-    let now = chrono::Utc::now().timestamp();
-
+    // Check if guild already exists in Santa database
     let guild_exists: Option<i64> = db
         .query_row(
             "SELECT id FROM santa_guilds WHERE guild_id = ?1",
@@ -186,24 +235,98 @@ pub async fn santa_create(
             e
         })?;
 
+    // Skip doing anything if guild already exists
     if guild_exists.is_some() {
         ctx.say("A Secret Santa event already exists for this server!")
             .await?;
-        info!("Secret Santa already exists in guild {}. Ignoring request...", guild_id);
+        info!(
+            "Secret Santa already exists in guild {}. Ignoring request...",
+            guild_id
+        );
         return Ok(());
     }
 
-    db.execute(
-        "INSERT INTO santa_guilds (guild_id, created_at) VALUES (?1, ?2)",
-        (&guild_id, &now),
-    )
-    .map_err(|e| {
-        error!(
-            ?e,
-            "Failed to insert guild into Secret Santa table for guild {}", guild_id
-        );
+    // Create guild in Santa database
+    let _id = Guild::create(&db, &guild_id, draw_at, gift_at, None, None).map_err(|e| {
+        error!(?e, "Failed to create Secret Santa for guild {}", guild_id);
         e
     })?;
+    info!("Created Secret Santa datbase entry for guild {}", guild_id);
+
+    // Get HTTP to create events
+    let http = ctx.serenity_context().http.clone();
+
+    // Create drawing event
+    if draw_at.is_some() {
+        let event_time = chrono::Utc.timestamp_opt(draw_at.unwrap(), 0).unwrap();
+        let event = CreateScheduledEvent::new(
+            serenity::ScheduledEventType::External,
+            "Secret Santa Drawing",
+            event_time,
+        );
+        let event = event.location("The North Pole");
+        let event = event.description("This is the deadline to sign up for Secret Santa. Santas will be assigned at this time.");
+        let event = event.end_time(event_time + Duration::minutes(5));
+
+        match serenity::Builder::execute(event, &http, ctx.guild_id().unwrap()).await {
+            Ok(event) => {
+                let _r = Guild::set_draw_event(&db, &guild_id, &event.id.get().to_string());
+                info!(
+                    "Successfully created Secret Santa drawing event for guild {}. Event ID: {}",
+                    guild_id,
+                    event.id.get()
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to create Secret Santa drawing event for guild {}: {}",
+                    guild_id, e
+                );
+                ctx.say(format!(
+                    "Failed to create Discord event for Secret Santa drawing: {}",
+                    e
+                ))
+                .await?;
+            }
+        }
+    }
+
+    // Create gifting event
+    if gift_at.is_some() {
+        let event_time = chrono::Utc.timestamp_opt(gift_at.unwrap(), 0).unwrap();
+        let event = CreateScheduledEvent::new(
+            serenity::ScheduledEventType::External,
+            "Secret Santa Gifting",
+            event_time,
+        );
+        let event = event.location("The North Pole");
+        let event = event.description(
+            "This is time you should schedule your Secret Santa gifts to be delivered.",
+        );
+        let event = event.end_time(event_time + Duration::minutes(5));
+
+        match serenity::Builder::execute(event, &http, ctx.guild_id().unwrap()).await {
+            Ok(event) => {
+                let _r = Guild::set_gift_event(&db, &guild_id, &event.id.get().to_string());
+                info!(
+                    "Successfully created Secret Santa gifting event for guild {}. Event ID: {}",
+                    guild_id,
+                    event.id.get()
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to create Secret Santa gifting event for guild {}: {}",
+                    guild_id, e
+                );
+                ctx.say(format!(
+                    "Failed to create Discord event for Secret Santa gifting: {}",
+                    e
+                ))
+                .await?;
+            }
+        }
+    }
 
     debug!("Released database lock after Secret Santa initialization.");
     ctx.say("Secret Santa initialized for this server!").await?;
@@ -232,21 +355,7 @@ pub async fn santa_set_time(
     let db = ctx.data().db.clone();
     let db = db.lock().await;
 
-    let guild: Option<Guild> = {
-        let mut stmt = db.prepare(
-            "SELECT id, guild_id, draw_at, gift_at FROM santa_guilds WHERE guild_id = ?1",
-        )?;
-        stmt.query_row([&guild_id], |row| {
-            Ok(Guild {
-                id: row.get(0)?,
-                guild_id: row.get(1)?,
-                drawing_time: row.get(2)?,
-                gifting_time: row.get(3)?,
-            })
-        })
-        .optional()?
-    };
-
+    let guild = Guild::get(&db, &guild_id).unwrap();
     let mut guild = match guild {
         Some(g) => g,
         None => {
@@ -260,19 +369,37 @@ pub async fn santa_set_time(
     if let Some(ts) = draw_at {
         if ts == 0 {
             guild.drawing_time = None;
-            info!("User {} cleared Secret Santa drawing time for guild {}", ctx.author(), guild_id);
+            info!(
+                "User {} cleared Secret Santa drawing time for guild {}",
+                ctx.author(),
+                guild_id
+            );
         } else {
             guild.drawing_time = Some(ts);
-            info!("User {} updated Secret Santa drawing time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
+            info!(
+                "User {} updated Secret Santa drawing time for guild {} to {}",
+                ctx.author(),
+                guild_id,
+                &ts.to_string()
+            );
         }
     }
     if let Some(ts) = gift_at {
         if ts == 0 {
             guild.gifting_time = None;
-            info!("User {} cleared Secret Santa gifting time for guild {}", ctx.author(), guild_id);
+            info!(
+                "User {} cleared Secret Santa gifting time for guild {}",
+                ctx.author(),
+                guild_id
+            );
         } else {
             guild.gifting_time = Some(ts);
-            info!("User {} updated Secret Santa gifting time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
+            info!(
+                "User {} updated Secret Santa gifting time for guild {} to {}",
+                ctx.author(),
+                guild_id,
+                &ts.to_string()
+            );
         }
     }
 
@@ -314,7 +441,7 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
 
     let guild: Option<Guild> = {
         let mut stmt = db.prepare(
-            "SELECT id, guild_id, draw_at, gift_at FROM santa_guilds WHERE guild_id = ?1",
+            "SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id FROM santa_guilds WHERE guild_id = ?1",
         )?;
         stmt.query_row([&guild_id], |row| {
             Ok(Guild {
@@ -322,6 +449,8 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
                 guild_id: row.get(1)?,
                 drawing_time: row.get(2)?,
                 gifting_time: row.get(3)?,
+                drawing_event_id: row.get(4)?,
+                gifting_event_id: row.get(5)?,
             })
         })
         .optional()?
@@ -343,6 +472,7 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
         |row| row.get(0),
     )?;
 
+    // Get times
     let draw_display = guild
         .drawing_time
         .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
@@ -352,14 +482,30 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
         .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
         .unwrap_or("Not set".to_string());
 
-    // Build and send response
-    let msg = format!(
+    // Build
+    let mut msg = format!(
         "🎅🕵️ Secret Santa Info 🎄🎁\n\
         **Draw Time:** {}\n\
         **Gift Time:** {}\n\
         **Participants:** {}",
         draw_display, gift_display, num_participants
     );
+
+    // Get event links and add to message
+    if guild.drawing_event_id.is_some() {
+        let draw_event = String::from("https://discord.com/events/")
+            + &guild_id
+            + "/"
+            + &guild.drawing_event_id.unwrap();
+        msg.push_str(&format!("\n**[Drawing event](<{}>)**", draw_event));
+    }
+    if guild.gifting_event_id.is_some() {
+        let gift_event = String::from("https://discord.com/events/")
+            + &guild_id
+            + "/"
+            + &guild.gifting_event_id.unwrap();
+        msg.push_str(&format!("\n**[Gifting event](<{}>)**", gift_event));
+    }
 
     ctx.say(msg).await?;
 

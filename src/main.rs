@@ -113,6 +113,7 @@ async fn main() {
                 santa::santa_delete(),
                 santa::santa_register(),
                 santa::santa_list(),
+                santa::santa_unregister(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".into()),

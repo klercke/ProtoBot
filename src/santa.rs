@@ -586,7 +586,7 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Register for the Secret Santa in this server
+/// Register for this server's Secret Santa
 #[poise::command(slash_command, prefix_command)]
 pub async fn santa_register(
     ctx: Context<'_>,
@@ -643,7 +643,7 @@ pub async fn santa_register(
     Ok(())
 }
 
-/// List all Secret Santa participants
+/// List all Secret Santa participants in this server
 #[poise::command(slash_command, prefix_command)]
 pub async fn santa_list(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx
@@ -687,6 +687,41 @@ pub async fn santa_list(ctx: Context<'_>) -> Result<(), Error> {
     }
     if !msg.is_empty() {
         ctx.say(&msg).await?;
+    }
+
+    Ok(())
+}
+
+// Unregisters you from this server's Secret Santa
+#[poise::command(slash_command, prefix_command)]
+pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a guild")?
+        .to_string();
+    let user_id = ctx.author().id.to_string();
+
+    let db = ctx.data().db.clone();
+    let db = db.lock().await;
+
+    let deleted = db.execute(
+        "DELETE FROM santa_participants WHERE guild_id = ?1 AND user_id = ?2",
+        [&guild_id, &user_id],
+    )?;
+
+    if deleted == 0 {
+        ctx.say("You were not registered for Secret Santa.").await?;
+        info!(
+            "User {} tried to unregister for Secret Santa in guild {}, but was not registered",
+            user_id, guild_id
+        );
+    } else {
+        ctx.say("You have been unregistered from Secret Santa.")
+            .await?;
+        info!(
+            "User {} unregistered for Secret Santa in guild {}",
+            user_id, guild_id
+        );
     }
 
     Ok(())

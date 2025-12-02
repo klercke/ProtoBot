@@ -112,7 +112,7 @@ impl Assignment {
 impl Guild {
     fn insert(db: &rusqlite::Connection, guild: &Guild) -> rusqlite::Result<i64> {
         db.execute(
-            "INSERT INTO santa_guilds (guild_id, drawing_time, gifting_time)
+            "INSERT INTO santa_guilds (guild_id, draw_at, gift_at)
             VALUES (?1, ?2, ?3)",
             (&guild.guild_id, guild.drawing_time, guild.gifting_time),
         )?;
@@ -121,7 +121,7 @@ impl Guild {
 
     fn get(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Option<Guild>> {
         let mut stmt = db.prepare(
-            r#"SELECT id, guild_id, drawing_time, gifting_time, drawing_event_id, gifting_event_id
+            r#"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id
             FROM santa_guilds
             WHERE guild_id = ?1"#,
         )?;
@@ -509,6 +509,72 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     }
 
     ctx.say(msg).await?;
+
+    Ok(())
+}
+
+/// Deletes the Secret Santa event in this server
+#[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
+pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a guild")?
+        .to_string();
+
+    let db = ctx.data().db.clone();
+    let db = db.lock().await;
+
+    info!("User {} requested removal of Secret Santa event in guild {}", ctx.author().id, guild_id);
+
+    // Fetch guild row
+    let guild = match Guild::get(&db, &guild_id)? {
+        Some(g) => g,
+        None => {
+            ctx.say("No Secret Santa event exists for this guild.").await?;
+            return Ok(());
+        }
+    };
+
+    // Delete Discord scheduled events
+    let http = ctx.serenity_context().http.clone();
+    if let Some(event_id) = guild.drawing_event_id {
+        if let Err(e) = ctx
+            .guild_id()
+            .unwrap()
+            .delete_scheduled_event(&http, event_id)
+            .await
+        {
+            warn!(?e, "Failed to delete drawing event for guild {}", guild_id);
+        }
+    }
+    if let Some(event_id) = guild.gifting_event_id {
+        if let Err(e) = ctx
+            .guild_id()
+            .unwrap()
+            .delete_scheduled_event(&http, event_id)
+            .await
+        {
+            warn!(?e, "Failed to delete gifting event for guild {}", guild_id);
+        }
+    }
+
+    debug!("Clearing Secret Santa rows from database for guild {}", guild_id);
+    // Delete rows from DB
+    db.execute(
+        "DELETE FROM santa_guilds WHERE guild_id = ?1",
+        [&guild_id],
+    )?;
+    db.execute(
+        "DELETE FROM santa_assignments WHERE participant_id IN (SELECT id FROM santa_participants WHERE guild_id = ?1)",
+        [&guild_id],
+    )?;
+    db.execute(
+        "DELETE FROM santa_participants WHERE guild_id = ?1",
+        [&guild_id],
+    )?;
+
+    ctx.say("Secret Santa event deleted successfully!").await?;
+    info!("Successfully deleted Secret Santa event for guild {}", guild_id);
 
     Ok(())
 }

@@ -258,12 +258,22 @@ pub async fn santa_set_time(
 
     // Update struct values
     if let Some(ts) = draw_at {
-        guild.drawing_time = Some(ts);
-        info!("User {} updated Secret Santa drawing time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
+        if ts == 0 {
+            guild.drawing_time = None;
+            info!("User {} cleared Secret Santa drawing time for guild {}", ctx.author(), guild_id);
+        } else {
+            guild.drawing_time = Some(ts);
+            info!("User {} updated Secret Santa drawing time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
+        }
     }
     if let Some(ts) = gift_at {
-        guild.gifting_time = Some(ts);
-        info!("User {} updated Secret Santa gifting time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
+        if ts == 0 {
+            guild.gifting_time = None;
+            info!("User {} cleared Secret Santa gifting time for guild {}", ctx.author(), guild_id);
+        } else {
+            guild.gifting_time = Some(ts);
+            info!("User {} updated Secret Santa gifting time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
+        }
     }
 
     // Write updated times to DB
@@ -277,14 +287,14 @@ pub async fn santa_set_time(
     let draw_display = guild
         .drawing_time
         .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
-        .unwrap_or("not set".to_string());
+        .unwrap_or("Not set".to_string());
     let gift_display = guild
         .gifting_time
         .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
-        .unwrap_or("not set".to_string());
+        .unwrap_or("Not set".to_string());
 
     ctx.say(format!(
-        "Secret Santa times for this guild:\nDraw: {}\nGift: {}",
+        "Secret Santa times for this guild:\n**Draw:** {}\n**Gift:** {}",
         draw_display, gift_display
     ))
     .await?;
@@ -336,11 +346,11 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     let draw_display = guild
         .drawing_time
         .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
-        .unwrap_or("not set".to_string());
+        .unwrap_or("Not set".to_string());
     let gift_display = guild
         .gifting_time
         .map(|ts| format!("<t:{}:F> (<t:{}:R>)", ts, ts))
-        .unwrap_or("not set".to_string());
+        .unwrap_or("Not set".to_string());
 
     // Build and send response
     let msg = format!(

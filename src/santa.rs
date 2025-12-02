@@ -1,7 +1,7 @@
 use crate::{Context, Error};
 
 use chrono::{prelude::*, Duration};
-use poise::serenity_prelude::{self as serenity, CreateScheduledEvent};
+use poise::serenity_prelude::{self as serenity, CreateScheduledEvent, EditScheduledEvent};
 use rusqlite::{self, OptionalExtension};
 use tracing::{debug, error, info, warn};
 
@@ -30,8 +30,8 @@ struct Guild {
     guild_id: String,
     drawing_time: Option<i64>,
     gifting_time: Option<i64>,
-    drawing_event_id: Option<String>,
-    gifting_event_id: Option<String>,
+    drawing_event_id: Option<u64>,
+    gifting_event_id: Option<u64>,
 }
 
 impl Participant {
@@ -149,8 +149,8 @@ impl Guild {
         guild_id: &str,
         draw_at: Option<i64>,
         gift_at: Option<i64>,
-        draw_event_id: Option<String>,
-        gift_event_id: Option<String>,
+        draw_event_id: Option<u64>,
+        gift_event_id: Option<u64>,
     ) -> rusqlite::Result<i64> {
         let now = chrono::Utc::now().timestamp();
         db.execute(
@@ -365,7 +365,7 @@ pub async fn santa_set_time(
         }
     };
 
-    // Update struct values
+    // Update struct values and event times
     if let Some(ts) = draw_at {
         if ts == 0 {
             guild.drawing_time = None;
@@ -375,7 +375,7 @@ pub async fn santa_set_time(
                 guild_id
             );
         } else {
-            guild.drawing_time = Some(ts);
+            // TODO: Make this also update the Discord Scheduled event
             info!(
                 "User {} updated Secret Santa drawing time for guild {} to {}",
                 ctx.author(),
@@ -393,6 +393,7 @@ pub async fn santa_set_time(
                 guild_id
             );
         } else {
+            // TODO: Make this also update the Discord Scheduled event
             guild.gifting_time = Some(ts);
             info!(
                 "User {} updated Secret Santa gifting time for guild {} to {}",
@@ -496,14 +497,14 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
         let draw_event = String::from("https://discord.com/events/")
             + &guild_id
             + "/"
-            + &guild.drawing_event_id.unwrap();
+            + &guild.drawing_event_id.unwrap().to_string();
         msg.push_str(&format!("\n**[Drawing event](<{}>)**", draw_event));
     }
     if guild.gifting_event_id.is_some() {
         let gift_event = String::from("https://discord.com/events/")
             + &guild_id
             + "/"
-            + &guild.gifting_event_id.unwrap();
+            + &guild.gifting_event_id.unwrap().to_string();
         msg.push_str(&format!("\n**[Gifting event](<{}>)**", gift_event));
     }
 

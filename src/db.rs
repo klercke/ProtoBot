@@ -33,8 +33,8 @@ pub fn init(conn: &Connection) -> Result<()> {
             draw_at             INTEGER,
             gift_at             INTEGER,
             created_at          INTEGER,
-            drawing_event_id    TEXT,
-            gifting_event_id    TEXT
+            drawing_event_id    INTEGER,
+            gifting_event_id    INTERER
         );
     "#,
     );

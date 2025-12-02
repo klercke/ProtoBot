@@ -107,7 +107,7 @@ async fn main() {
                 commands::strange(),
                 commands::tex(),
                 commands::what(),
-                santa::santa_init(),
+                santa::santa_create(),
                 santa::santa_set_times(),
                 santa::santa_info(),
             ],

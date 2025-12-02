@@ -142,7 +142,7 @@ impl Guild {
 
 /// Initialize a Secret Santa event in a server (requires Administrator permissions in the server).
 #[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
-pub async fn santa_init(
+pub async fn santa_create(
     ctx: Context<'_>,
     #[description = "The time that you will assign Santas (Unix timestamp)"] draw_at: Option<i64>,
     #[description = "The time when gifts are to be sent (Unix timestamp)"] gift_at: Option<i64>,
@@ -153,12 +153,12 @@ pub async fn santa_init(
         .to_string();
 
     info!(
-        "Recieved request to initialize Secret Santa in guild {} by user {}",
-        ctx.channel_id(),
+        "Recieved request to create Secret Santa in guild {} by user {}",
+        guild_id,
         ctx.author()
     );
 
-    let response = "Initializing secret santa for this server...";
+    let response = "Initializing Secret Santa for this server...";
     ctx.say(response).await?;
 
     // Show bot as typing. Ignore any errors that come from this
@@ -170,7 +170,7 @@ pub async fn santa_init(
     // Get a database handle and lock connection
     let db = ctx.data().db.clone();
     let db = db.lock().await;
-    debug!("Acquired database lock for Secret Santa initialization.");
+    debug!("Acquired database lock for Secret Santa initialization");
 
     let now = chrono::Utc::now().timestamp();
 
@@ -187,8 +187,9 @@ pub async fn santa_init(
         })?;
 
     if guild_exists.is_some() {
-        ctx.say("A Secret Santa already exists for this server!")
+        ctx.say("A Secret Santa event already exists for this server!")
             .await?;
+        info!("Secret Santa already exists in guild {}. Ignoring request...", guild_id);
         return Ok(());
     }
 
@@ -249,7 +250,7 @@ pub async fn santa_set_times(
     let mut guild = match guild {
         Some(g) => g,
         None => {
-            ctx.say("No Secret Santa event exists for this server! Run `/santa_init` first.")
+            ctx.say("No Secret Santa event exists for this server! Run `/santa_create` first.")
                 .await?;
             return Ok(());
         }
@@ -258,9 +259,11 @@ pub async fn santa_set_times(
     // Update struct values
     if let Some(ts) = draw_at {
         guild.drawing_time = Some(ts);
+        info!("User {} updated Secret Santa drawing time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
     }
     if let Some(ts) = gift_at {
         guild.gifting_time = Some(ts);
+        info!("User {} updated Secret Santa gifting time for guild {} to {}", ctx.author(), guild_id, &ts.to_string());
     }
 
     // Write updated times to DB

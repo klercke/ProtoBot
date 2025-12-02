@@ -216,7 +216,7 @@ pub async fn santa_create(
 
 /// Sets the drawing and/or gifting time for the Secret Santa
 #[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
-pub async fn santa_set_times(
+pub async fn santa_set_time(
     ctx: Context<'_>,
     #[description = "Drawing time (Unix timestamp)"] draw_at: Option<i64>,
     #[description = "Gifting time (Unix timestamp)"] gift_at: Option<i64>,

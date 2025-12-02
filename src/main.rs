@@ -108,7 +108,7 @@ async fn main() {
                 commands::tex(),
                 commands::what(),
                 santa::santa_create(),
-                santa::santa_set_times(),
+                santa::santa_set_time(),
                 santa::santa_info(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {

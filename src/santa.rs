@@ -1,7 +1,7 @@
 use crate::{Context, Error};
 
 use chrono::{prelude::*, Duration};
-use poise::serenity_prelude::{self as serenity, CreateScheduledEvent};
+use poise::serenity_prelude::{self as serenity, CreateScheduledEvent, UserId};
 use regex::Regex;
 use rusqlite::{self, OptionalExtension};
 use tracing::{debug, error, info, warn};
@@ -20,7 +20,6 @@ struct Participant {
 struct Assignment {
     participant_id: i64,
     giftee_id: i64,
-    assigned_at: i64,
 }
 
 // Represents a Secret Santa guild (SQLite table santa_guilds)
@@ -75,9 +74,9 @@ impl Participant {
 impl Assignment {
     fn insert(db: &rusqlite::Connection, a: &Assignment) -> rusqlite::Result<()> {
         db.execute(
-            "INSERT INTO santa_assignments (participant_id, giftee_id, assigned_at)
-            VALUES (?1, ?2, ?3)",
-            (&a.participant_id, &a.giftee_id, &a.assigned_at),
+            "INSERT INTO santa_assignments (participant_id, giftee_id)
+            VALUES (?1, ?2)",
+            (&a.participant_id, &a.giftee_id),
         )?;
         Ok(())
     }
@@ -87,7 +86,7 @@ impl Assignment {
         participant_id: i64,
     ) -> rusqlite::Result<Option<Assignment>> {
         let mut stmt = db.prepare(
-            "SELECT participant_id, giftee_id, assigned_at
+            "SELECT participant_id, giftee_id
             FROM santa_assignments
             WHERE participant_id = ?1",
         )?;
@@ -96,7 +95,6 @@ impl Assignment {
             Ok(Assignment {
                 participant_id: row.get(0)?,
                 giftee_id: row.get(1)?,
-                assigned_at: row.get(3)?,
             })
         });
 
@@ -697,7 +695,7 @@ pub async fn santa_list(ctx: Context<'_>) -> Result<(), Error> {
 pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
-        .ok_or("Command must be used in a guild")?
+        .ok_or("Command must be used in a server")?
         .to_string();
     let user_id = ctx.author().id.to_string();
 
@@ -724,5 +722,122 @@ pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
         );
     }
 
+    Ok(())
+}
+
+/// Assign giftees to all Secret Santa participants. If assignments are already made, reshuffle
+#[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
+pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
+
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a server")?
+        .to_string();
+
+    let guild_name = ctx
+        .serenity_context()
+        .http
+        .get_guild(ctx.guild_id().unwrap())
+        .await
+        .map(|g| g.name)
+        .unwrap_or_else(|_| "this server".to_string());
+
+    info!(
+        "User {} requested Secret Santa shuffle in guild {}",
+        ctx.author(),
+        guild_id
+    );
+
+    let db = ctx.data().db.clone();
+
+    // Get participants, shuffle, and assign giftees
+    let guild_id_clone = guild_id.clone();
+    let dm_info: Vec<(u64, u64, String)> = tokio::task::spawn_blocking(move || -> Result<_, rusqlite::Error> {
+        let db = db.blocking_lock();
+
+        // Get participants
+        let mut stmt = db.prepare("SELECT id, user_id FROM santa_participants WHERE guild_id = ?1")?;
+        let participants: Vec<(i64, String)> = stmt.query_map([&guild_id_clone], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        if participants.len() < 2 {
+            return Ok(vec![]);
+        }
+
+        // Shuffle
+        let mut shuffled = participants.clone();
+        shuffled.shuffle(&mut thread_rng());
+
+        // Clear old assignments
+        db.execute(
+            "DELETE FROM santa_assignments WHERE participant_id IN (SELECT id FROM santa_participants WHERE guild_id = ?1)",
+            [&guild_id_clone],
+        )?;
+
+        // Assign in a loop, collect DM info
+        let mut dm_info = Vec::new();
+        for i in 0..shuffled.len() {
+            let giver = &shuffled[i];
+            let giftee = &shuffled[(i + 1) % shuffled.len()];
+
+            // Insert into DB
+            Assignment::insert(&db, &Assignment {
+                participant_id: giver.0,
+                giftee_id: giftee.0,
+            })?;
+
+            // Fetch giftee Steam
+            let mut stmt2 = db.prepare("SELECT steam FROM santa_participants WHERE id = ?1")?;
+            let giftee_steam: String = stmt2.query_row([giftee.0], |r| r.get::<_, Option<String>>(0))?
+                .unwrap_or_else(|| "No Steam URL".to_string());
+
+            dm_info.push((
+                giver.1.parse::<u64>().unwrap_or(0),   // Gifter Discord ID
+                giftee.1.parse::<u64>().unwrap_or(0),  // Giftee Discord ID
+                giftee_steam,
+            ));
+        }
+
+        Ok(dm_info)
+    })
+    .await??;
+
+    if dm_info.is_empty() {
+        ctx.say("Not enough participants to shuffle Secret Santa (need at least 2).")
+            .await?;
+        return Ok(());
+    }
+
+    ctx.say("Secret Santa assignments shuffled and stored in the database! DMs will be sent to participants.").await?;
+
+    // Send DMs
+    for (giver_id, giftee_discord_id, giftee_steam) in dm_info {
+        let user_id = UserId::new(giver_id);
+        match user_id.to_user(&ctx.serenity_context().http).await {
+            Ok(user) => {
+                let dm_message = serenity::CreateMessage::default()
+                    .content(format!(
+                        "🎅 It's Secret Santa time in {}! Your assigned giftee is <@{}>. Check out their [Steam wishlist]({}) and run `/santa_info` in {} to check when your gift should be scheduled to arrive!",
+                        guild_name, giftee_discord_id, (giftee_steam + "/wishlist"), guild_name
+                    ));
+
+                if let Err(e) = user.dm(&ctx.serenity_context().http, dm_message).await {
+                    warn!(
+                        ?e,
+                        "Failed to DM participant {} their Secret Santa assignment", giver_id
+                    );
+                } else {
+                    debug!("Sent DM to participant {} with giftee info", giver_id);
+                }
+            }
+            Err(e) => {
+                warn!(?e, "Failed to fetch user {} for Secret Santa DM", giver_id);
+            }
+        }
+    }
+
+    info!("Secret Santa shuffle completed for guild {}", guild_id);
     Ok(())
 }

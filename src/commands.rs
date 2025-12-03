@@ -1,11 +1,7 @@
 use crate::{Context, Error};
 
 use poise::serenity_prelude as serenity;
-use rand::{
-    Rng,
-    SeedableRng,
-    rngs::SmallRng,
-};
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 /// Show the help menu
 #[poise::command(prefix_command, invoke_on_edit, slash_command)]
@@ -20,7 +16,7 @@ pub async fn help(
         command.as_deref(),
         poise::builtins::HelpConfiguration {
             extra_text_at_bottom:
-                "Additional documentation can be found at https://github.com/klercke/ProtoBot",
+                "Additional documentation can be found at https://gitlab.com/klercke/ProtoBot/",
             ..Default::default()
         },
     )
@@ -30,9 +26,7 @@ pub async fn help(
 
 /// Pong!
 #[poise::command(slash_command, prefix_command)]
-pub async fn ping(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     let response = "Pong!";
     ctx.say(response).await?;
     Ok(())
@@ -52,10 +46,11 @@ pub async fn age(
 
 /// Prints some information about ProtoBot
 #[poise::command(slash_command, prefix_command)]
-pub async fn about(
-    ctx: Context<'_>
-) -> Result<(), Error> {
-    let response = format!("ProtoBot v{}. Source code and bug tracker: https://github.com/klercke/ProtoBot", env!("CARGO_PKG_VERSION"));
+pub async fn about(ctx: Context<'_>) -> Result<(), Error> {
+    let response = format!(
+        "ProtoBot v{}. Source code and bug tracker: https://github.com/klercke/ProtoBot",
+        env!("CARGO_PKG_VERSION")
+    );
     ctx.say(response).await?;
     Ok(())
 }
@@ -79,23 +74,23 @@ pub async fn based(
         "enemy of the based.",
         "all of your based are belong to us.",
     ];
-    
+
     // Define an RNG to choose a random option
     let mut based_rng = SmallRng::from_entropy();
-    let based_idx = based_rng.gen_range(0..based_vec.len()); 
+    let based_idx = based_rng.gen_range(0..based_vec.len());
 
     // "x is based." vs "based."
     match user {
         Some(user) => {
             let response = format!("<@{}> is {}", user.id, based_vec[based_idx]);
             ctx.reply(response).await?;
-        },
+        }
         _ => {
             let based_str = based_vec[based_idx];
             // Capitalize the first letter of the response
             let response = based_str[0..1].to_uppercase() + &based_str[1..];
             ctx.reply(response).await?;
-        },
+        }
     }
 
     Ok(())
@@ -103,18 +98,14 @@ pub async fn based(
 
 /// Spawns buttons to register and deregister commands
 #[poise::command(slash_command, prefix_command, owners_only, hide_in_help)]
-pub async fn register(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
     poise::builtins::register_application_commands_buttons(ctx).await?;
     Ok(())
 }
 
 /// Deprecated
 #[poise::command(prefix_command, hide_in_help)]
-pub async fn correct(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn correct(ctx: Context<'_>) -> Result<(), Error> {
     let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
     ctx.reply(response).await?;
     Ok(())
@@ -122,9 +113,7 @@ pub async fn correct(
 
 /// Deprecated
 #[poise::command(prefix_command, hide_in_help)]
-pub async fn kick(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn kick(ctx: Context<'_>) -> Result<(), Error> {
     let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
     ctx.reply(response).await?;
     Ok(())
@@ -132,9 +121,7 @@ pub async fn kick(
 
 /// Deprecated
 #[poise::command(prefix_command, hide_in_help)]
-pub async fn nice(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn nice(ctx: Context<'_>) -> Result<(), Error> {
     let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
     ctx.reply(response).await?;
     Ok(())
@@ -142,9 +129,7 @@ pub async fn nice(
 
 /// Deprecated
 #[poise::command(prefix_command, hide_in_help)]
-pub async fn score(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn score(ctx: Context<'_>) -> Result<(), Error> {
     let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
     ctx.reply(response).await?;
     Ok(())
@@ -152,9 +137,7 @@ pub async fn score(
 
 /// Deprecated
 #[poise::command(prefix_command, hide_in_help)]
-pub async fn strange(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn strange(ctx: Context<'_>) -> Result<(), Error> {
     let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
     ctx.reply(response).await?;
     Ok(())
@@ -162,9 +145,7 @@ pub async fn strange(
 
 /// Deprecated
 #[poise::command(prefix_command, hide_in_help)]
-pub async fn tex(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn tex(ctx: Context<'_>) -> Result<(), Error> {
     let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
     ctx.reply(response).await?;
     Ok(())
@@ -172,9 +153,7 @@ pub async fn tex(
 
 /// Deprecated
 #[poise::command(prefix_command, hide_in_help)]
-pub async fn what(
-    ctx: Context<'_>
-) -> Result<(), Error> {
+pub async fn what(ctx: Context<'_>) -> Result<(), Error> {
     let response = "I'm sorry, but this command is not implemented in this version of Protobot.";
     ctx.reply(response).await?;
     Ok(())

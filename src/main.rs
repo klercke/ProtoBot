@@ -174,7 +174,7 @@ async fn event_handler(
         }
         serenity::FullEvent::Message { new_message } => {
             // Tell the bot to ignore its own messages (to prevent loops)
-            if new_message.is_own(ctx) {
+            if new_message.author == **ctx.cache.current_user() {
                 debug!("Ignoring message sent by self");
                 return Ok(());
             }

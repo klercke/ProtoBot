@@ -21,4 +21,5 @@ target/
 .env
 
 # Log files
-logs/
+logs/*
+*.log

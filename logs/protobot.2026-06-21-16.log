@@ -1,2 +1,0 @@
-{"timestamp":"2026-06-21T16:59:41.975052Z","level":"INFO","fields":{"message":"Hello, ProtoBot here!"},"target":"protobot"}
-{"timestamp":"2026-06-21T16:59:41.975237Z","level":"ERROR","fields":{"message":"Failed to connect to SQLite database (Hint: Make sure the `data/` directory exists)","e":"SqliteFailure(Error { code: CannotOpen, extended_code: 14 }, Some(\"unable to open database file: data/protobot.sqlite3\"))"},"target":"protobot"}

@@ -25,3 +25,11 @@
 {"timestamp":"2026-06-21T17:04:25.187811Z","level":"INFO","fields":{"message":"[ShardRunner ShardInfo { id: ShardId(0), total: 1 }] Running"},"target":"serenity::gateway::bridge::shard_runner","span":{"name":"run"},"spans":[{"name":"run"}]}
 {"timestamp":"2026-06-21T17:04:25.759222Z","level":"INFO","fields":{"message":"Successfully authenticated to Discord as ProtoBot"},"target":"protobot"}
 {"timestamp":"2026-06-21T17:04:25.759270Z","level":"INFO","fields":{"message":"Set bot status to \"ProtoBot v0.9.0: Holly and/or Jolly!\""},"target":"protobot"}
+{"timestamp":"2026-06-21T17:13:38.499324Z","level":"INFO","fields":{"message":"Hello, ProtoBot here!"},"target":"protobot"}
+{"timestamp":"2026-06-21T17:13:38.499585Z","level":"INFO","fields":{"message":"Initializing SQLite schema…"},"target":"protobot::db"}
+{"timestamp":"2026-06-21T17:13:38.499914Z","level":"INFO","fields":{"message":"SQLite schema initialization OK"},"target":"protobot::db"}
+{"timestamp":"2026-06-21T17:13:38.499954Z","level":"INFO","fields":{"message":"Database ready"},"target":"protobot"}
+{"timestamp":"2026-06-21T17:13:39.056827Z","level":"INFO","fields":{"message":"Telling shard queuer to start shard 0"},"target":"serenity::gateway::bridge::shard_manager","span":{"shard_info":"[ShardId(0), ShardId(1)]","name":"boot"},"spans":[{"name":"start"},{"end_shard":0,"start_shard":0,"total_shards":1,"name":"start_connection"},{"name":"initialize"},{"shard_info":"[ShardId(0), ShardId(1)]","name":"boot"}]}
+{"timestamp":"2026-06-21T17:13:39.365375Z","level":"INFO","fields":{"message":"[ShardRunner ShardInfo { id: ShardId(0), total: 1 }] Running"},"target":"serenity::gateway::bridge::shard_runner","span":{"name":"run"},"spans":[{"name":"run"}]}
+{"timestamp":"2026-06-21T17:13:39.873489Z","level":"INFO","fields":{"message":"Successfully authenticated to Discord as ProtoBot"},"target":"protobot"}
+{"timestamp":"2026-06-21T17:13:39.873546Z","level":"INFO","fields":{"message":"Set bot status to \"ProtoBot v0.10.0: The good, the dad, and the ugly!\""},"target":"protobot"}

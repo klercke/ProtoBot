@@ -43,6 +43,7 @@
             rust-analyzer
             clippy
             git-cliff
+            sqlite
           ];
           RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
         });
@@ -56,11 +57,11 @@
 
         # Package build
         packages = {
-          # nix build .#protochess
-          # nix build .#packages.x86_64-linux.protochess
-          protochess = (rustPkgs.workspace.protochess {});
+          # nix build .#protobot
+          # nix build .#packages.x86_64-linux.protobot
+          protobot = (rustPkgs.workspace.protobot {});
           # nix build
-          default = packages.protochess;
+          default = packages.protobot;
         };
       }
     );

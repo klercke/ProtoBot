@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.42"
+chrono-tz = "0.10.4"
 dotenv = "0.15.0"
 poise = { version = "0.6.1-rc1" }
 rand = { version = "0.8.5", features = ["small_rng"] }

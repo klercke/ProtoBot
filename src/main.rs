@@ -2,6 +2,7 @@
 mod commands;
 mod db;
 mod santa;
+mod holidays;
 
 // Imports
 use poise::serenity_prelude::{self as serenity, ActivityData};
@@ -166,7 +167,7 @@ async fn event_handler(
 
             // Set Discord status for the bot
             let bot_status_message = format!(
-                "ProtoBot v{}: Holly and/or Jolly!",
+                "ProtoBot v{}: The good, the dad, and the ugly!",
                 env!("CARGO_PKG_VERSION")
             );
             ctx.set_activity(Some(ActivityData::custom(&bot_status_message)));
@@ -183,8 +184,16 @@ async fn event_handler(
             // This will capture any text after "i am", "i'm", or "im", stopping the capture on punctuation or a newline
             let im_dad_regex =
                 Regex::new(r#"(?i)(?:\b|^)(?:i['´`‘’]?m|i am)\b(.+?)(?:[\n.,;!?]|$)"#).unwrap();
-            // Dad jokes have a 1 in dad_joke_chance chance of ocurring
-            let dad_joke_chance = 10;
+            
+
+            // Dad jokes have a 1 in dad_joke_chance chance of ocurring, with a 100% chance on
+            // Father's day
+            let dad_joke_chance = match holidays::current_holiday() {
+                Some(holidays::Holiday::FathersDay) => 1,
+                _ => 10,
+            };
+
+
             let mut dad_joke_rng = SmallRng::from_entropy();
             if dad_joke_rng.gen_range(1..=dad_joke_chance) == 1 {
                 if let Some(caps) = im_dad_regex.captures(&new_message.content) {

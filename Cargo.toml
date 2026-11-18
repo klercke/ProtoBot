@@ -12,7 +12,7 @@ dotenv = "0.15.0"
 poise = { version = "0.7.1" }
 rand = { version = "0.8.5", features = ["small_rng"] }
 regex = "1.10.2"
-rusqlite = "0.37.0"
+rusqlite = "0.41.1"
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread", "full"] }
 tracing = "0.1.40"
 tracing-appender = "0.2.3"

@@ -1,0 +1,48 @@
+name: Bug report
+description: "Something broke or isn't behaving correctly"
+labels: ["type:bug", "needs-triage"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "If you're using the public version, say \"Public\". If self hosting, run `/about`."
+    validations:
+      required: true
+  - type: dropdown
+    id: instance
+    attributes:
+      label: Instance
+      options:
+        - Public
+        - Preview
+        - Self-hosted
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell
+      description: "Self-hosted only. Please remove any tokens/PII."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues
+          required: true

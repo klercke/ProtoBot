@@ -1,0 +1,36 @@
+name: Feature request
+description: "An idea for something new or a change to an existing feature"
+labels: ["type:feature", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Dad jokes
+        - Secret Santa
+        - Holidays
+        - Replies
+        - New module
+        - Other
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues
+          required: true

@@ -17,7 +17,6 @@ target/
 
 # Direnv
 .direnv
-.envrc
 .env
 
 # Log files

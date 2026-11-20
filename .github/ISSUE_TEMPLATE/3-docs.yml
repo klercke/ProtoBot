@@ -1,0 +1,16 @@
+name: Documentation
+description: "Something in the documentation is missing, wrong, or unclear"
+labels: ["type:docs", "needs-triage"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Page or file
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing
+    validations:
+      required: true

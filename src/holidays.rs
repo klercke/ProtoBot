@@ -18,6 +18,7 @@ pub enum Holiday {
 
 impl Holiday {
     /// True for both Christmas Eve and Christmas Day
+    #[cfg_attr(not(test), expect(dead_code))]
     pub fn is_christmas(self) -> bool {
         matches!(self, Holiday::ChristmasEve | Holiday::ChristmasDay)
     }

@@ -1,68 +1,119 @@
 {
+  description = "ProtoBot, a Discord bot made for friends";
+
   inputs = {
-    rust-overlay.url = "github:oxalica/rust-overlay/stable";
-    cargo2nix =  {
-      url = "github:cargo2nix/cargo2nix/release-0.12";
-      inputs.rust-overlay.follows = "rust-overlay";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    crane.url = "github:ipetkov/crane";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
-    flake-utils.follows = "cargo2nix/flake-utils";
-    nixpkgs.follows = "cargo2nix/nixpkgs";
   };
 
-  # Pass through all inputs and bring them into scope
-  outputs = inputs: with inputs;
+  outputs =
+    inputs@{ flake-parts, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
 
-    # Build the output set for each default system and map system sets into
-    # attributes, resulting in paths such as:
-    # nix build .#packages.x86_64-linux.<name>
-    flake-utils.lib.eachDefaultSystem ( system:
-      let
-        
-        # Create nixpkgs containing rustBuilder from cargo2nix overlay
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [
-            cargo2nix.overlays.default
-            rust-overlay.overlays.default
-          ];
+      perSystem =
+        {
+          system,
+          pkgs,
+          lib,
+          ...
+        }:
+        let
+          toolchainFor = p: p.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchainFor;
 
+          src = craneLib.cleanCargoSource ./.;
+
+          commonArgs = {
+            inherit src;
+            strictDeps = true;
+          };
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+          protobot = craneLib.buildPackage (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              doCheck = false;
+            }
+          );
+
+          pkgsMusl = pkgs.pkgsCross.musl64;
+          craneLibMusl = (inputs.crane.mkLib pkgsMusl).overrideToolchain toolchainFor;
+          protobot-static = pkgsMusl.callPackage (
+            _:
+            craneLibMusl.buildPackage {
+              inherit src;
+              strictDeps = true;
+              doCheck = false;
+            }
+          ) { };
+
+          staticOnly = lib.optionalAttrs (system == "x86_64-linux") { inherit protobot-static; };
+        in
+        {
+          _module.args.pkgs = import inputs.nixpkgs {
+            inherit system;
+            overlays = [ inputs.rust-overlay.overlays.default ];
+          };
+
+          packages = {
+            default = protobot;
+            inherit protobot;
+          }
+          // staticOnly;
+
+          checks = {
+            inherit protobot;
+
+            clippy = craneLib.cargoClippy (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+              }
+            );
+
+            nextest = craneLib.cargoNextest (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+              }
+            );
+
+          deny = craneLib.cargoDeny (
+              commonArgs
+              // {
+                src = lib.fileset.toSource {
+                  root = ./.;
+                  fileset = lib.fileset.unions [
+                    (craneLib.fileset.commonCargoSources ./.)
+                    ./deny.toml
+                  ];
+                };
+              }
+            );
+          }
+          // staticOnly;
+
+          devShells.default = craneLib.devShell {
+            packages = [
+              pkgs.cargo-nextest
+              pkgs.cargo-deny
+              pkgs.sqlite
+            ];
+          };
+
+          formatter = pkgs.nixfmt;
         };
-        
-        rustVersion = "1.93.0";
-
-        # Create workspace and dependencies package set
-        rustPkgs = pkgs.rustBuilder.makePackageSet {
-          inherit rustVersion;
-          packageFun = import ./Cargo.nix;
-        };
-
-        # Create workspace/dev shell
-        workspaceShell = (rustPkgs.workspaceShell {
-          packages = with pkgs; [
-            rust-bin.stable.${rustVersion}.default
-            rust-analyzer
-            clippy
-            git-cliff
-            sqlite
-          ];
-          RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
-        });
-
-
-      # Recursive output set for each system
-      in rec {
-        devShells = {
-          default = workspaceShell;
-        };
-
-        # Package build
-        packages = {
-          # nix build .#protobot
-          # nix build .#packages.x86_64-linux.protobot
-          protobot = (rustPkgs.workspace.protobot {});
-          # nix build
-          default = packages.protobot;
-        };
-      }
-    );
+    };
 }

@@ -2,6 +2,7 @@
 name = "protobot"
 version = "0.10.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,7 +13,7 @@ dotenv = "0.15.0"
 poise = { version = "0.6.1-rc1" }
 rand = { version = "0.8.5", features = ["small_rng"] }
 regex = "1.10.2"
-rusqlite = "0.37.0"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread", "full"] }
 tracing = "0.1.40"
 tracing-appender = "0.2.3"

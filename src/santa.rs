@@ -80,42 +80,9 @@ impl Assignment {
         )?;
         Ok(())
     }
-
-    fn get_for_participant(
-        db: &rusqlite::Connection,
-        participant_id: i64,
-    ) -> rusqlite::Result<Option<Assignment>> {
-        let mut stmt = db.prepare(
-            "SELECT participant_id, giftee_id
-            FROM santa_assignments
-            WHERE participant_id = ?1",
-        )?;
-
-        let row = stmt.query_row([participant_id], |row| {
-            Ok(Assignment {
-                participant_id: row.get(0)?,
-                giftee_id: row.get(1)?,
-            })
-        });
-
-        match row {
-            Ok(a) => Ok(Some(a)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
 }
 
 impl Guild {
-    fn insert(db: &rusqlite::Connection, guild: &Guild) -> rusqlite::Result<i64> {
-        db.execute(
-            "INSERT INTO santa_guilds (guild_id, draw_at, gift_at)
-            VALUES (?1, ?2, ?3)",
-            (&guild.guild_id, guild.drawing_time, guild.gifting_time),
-        )?;
-        Ok(db.last_insert_rowid())
-    }
-
     fn get(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Option<Guild>> {
         let mut stmt = db.prepare(
             r#"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id
@@ -254,8 +221,8 @@ pub async fn santa_create(
     let http = ctx.serenity_context().http.clone();
 
     // Create drawing event
-    if draw_at.is_some() {
-        let event_time = chrono::Utc.timestamp_opt(draw_at.unwrap(), 0).unwrap();
+    if let Some(timestamp) = draw_at {
+        let event_time = chrono::Utc.timestamp_opt(timestamp, 0).unwrap();
         let event = CreateScheduledEvent::new(
             serenity::ScheduledEventType::External,
             "Secret Santa Drawing",
@@ -289,8 +256,8 @@ pub async fn santa_create(
     }
 
     // Create gifting event
-    if gift_at.is_some() {
-        let event_time = chrono::Utc.timestamp_opt(gift_at.unwrap(), 0).unwrap();
+    if let Some(timestamp) = gift_at {
+        let event_time = chrono::Utc.timestamp_opt(timestamp, 0).unwrap();
         let event = CreateScheduledEvent::new(
             serenity::ScheduledEventType::External,
             "Secret Santa Gifting",
@@ -490,19 +457,15 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     );
 
     // Get event links and add to message
-    if guild.drawing_event_id.is_some() {
-        let draw_event = String::from("https://discord.com/events/")
-            + &guild_id
-            + "/"
-            + &guild.drawing_event_id.unwrap().to_string();
-        msg.push_str(&format!("\n**[Drawing event](<{}>)**", draw_event));
+    if let Some(id) = guild.drawing_event_id {
+        msg.push_str(&format!(
+            "\n**[Drawing event](<https://discord.com/events/{guild_id}/{id}>)**"
+        ));
     }
-    if guild.gifting_event_id.is_some() {
-        let gift_event = String::from("https://discord.com/events/")
-            + &guild_id
-            + "/"
-            + &guild.gifting_event_id.unwrap().to_string();
-        msg.push_str(&format!("\n**[Gifting event](<{}>)**", gift_event));
+    if let Some(id) = guild.gifting_event_id {
+        msg.push_str(&format!(
+            "\n**[Gifting event](<https://discord.com/events/{guild_id}/{id}>)**"
+        ));
     }
 
     ctx.say(msg).await?;
@@ -612,7 +575,7 @@ pub async fn santa_register(
     let db = db.lock().await;
 
     // Check if user already registered
-    if let Some(_) = Participant::get(&db, &guild_id, &user_id)? {
+    if Participant::get(&db, &guild_id, &user_id)?.is_some() {
         ctx.say("You are already registered for Secret Santa in this server!")
             .await?;
         return Ok(());

@@ -90,7 +90,7 @@
               }
             );
 
-          deny = craneLib.cargoDeny (
+            deny = craneLib.cargoDeny (
               commonArgs
               // {
                 src = lib.fileset.toSource {

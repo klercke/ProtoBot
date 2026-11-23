@@ -23,6 +23,7 @@
 
   lockFileMaintenance: {
     enabled: true,
+    automerge: true,
     schedule: ["* 0-5 1 * *"],
   },
 
@@ -37,19 +38,22 @@
       matchUpdateTypes: ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
       groupName: "monthly dependency updates",
       groupSlug: "monthly",
+      automerge: true,
     },
     {
-      // In 0.x, a minor bump is a breaking change, so give each one its own PR
+      // In 0.x, a minor bump can be a breaking change, so give each one its own PR
       matchUpdateTypes: ["minor"],
-      matchCurrentVersion: "<1.0.0",
+      matchCurrentVersion: "/^0\\./",
       groupName: null,
       groupSlug: null,
+      automerge: false,
     },
     {
       // Toolchain bumps can bring new clippy lints, so keep them on their own
       matchManagers: ["rust-toolchain"],
       groupName: null,
       groupSlug: null,
+      automerge: false,
     },
   ],
 
@@ -59,6 +63,7 @@
     schedule: ["* 0-5 * * 1"],
     minimumReleaseAge: null,
     semanticCommitType: "fix",
+    automerge: true,
     labels: ["type:bug", "dependencies"],
   },
 }

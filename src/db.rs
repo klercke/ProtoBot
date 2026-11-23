@@ -5,7 +5,7 @@ pub fn init(conn: &Connection) -> Result<()> {
     info!("Initializing SQLite schema…");
 
     let res = conn.execute_batch(
-        r#"
+        r"
         CREATE TABLE IF NOT EXISTS santa_participants (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id        TEXT NOT NULL
@@ -36,11 +36,11 @@ pub fn init(conn: &Connection) -> Result<()> {
             drawing_event_id    INTEGER,
             gifting_event_id    INTERER
         );
-    "#,
+    ",
     );
 
     match res {
-        Ok(_) => {
+        Ok(()) => {
             info!("SQLite schema initialization OK");
             Ok(())
         }

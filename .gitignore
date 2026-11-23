@@ -19,6 +19,7 @@ result-*
 # Direnv
 .direnv
 .env
+.envrc
 
 # Log files
 logs/*

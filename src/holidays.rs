@@ -1,7 +1,7 @@
 use chrono::{Datelike, NaiveDate, Utc, Weekday};
 use chrono_tz::Tz;
 
-/// The primary timezone that ProtoBot is used in
+/// The primary timezone that `ProtoBot` is used in
 pub const BOT_TZ: Tz = chrono_tz::America::New_York;
 
 /// All currently supported holidays
@@ -19,19 +19,9 @@ pub enum Holiday {
 impl Holiday {
     /// True for both Christmas Eve and Christmas Day
     #[cfg_attr(not(test), expect(dead_code))]
-    pub fn is_christmas(self) -> bool {
-        matches!(self, Holiday::ChristmasEve | Holiday::ChristmasDay)
+    pub const fn is_christmas(self) -> bool {
+        matches!(self, Self::ChristmasEve | Self::ChristmasDay)
     }
-}
-
-/// Returns the date of the `n`th `weekday` in a month (e.g. 2nd Sunday of May)
-fn nth_weekday(year: i32, month: u32, weekday: Weekday, n: u32) -> NaiveDate {
-    let first = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
-    let offset = (7 + weekday.num_days_from_sunday() as i64
-        - first.weekday().num_days_from_sunday() as i64)
-        % 7;
-    let day = 1 + offset as u32 + (n - 1) * 7;
-    NaiveDate::from_ymd_opt(year, month, day).unwrap()
 }
 
 /// Returns the tracked holiday for an arbitrary date, if any
@@ -46,16 +36,19 @@ pub fn holiday_for(date: NaiveDate) -> Option<Holiday> {
         (12, 25) => return Some(Holiday::ChristmasDay),
         _ => {}
     }
-    if date == nth_weekday(y, 5, Weekday::Sun, 2) {
+
+    if Some(date) == NaiveDate::from_weekday_of_month_opt(y, 5, Weekday::Sun, 2) {
         return Some(Holiday::MothersDay);
     }
-    if date == nth_weekday(y, 6, Weekday::Sun, 3) {
+
+    if Some(date) == NaiveDate::from_weekday_of_month_opt(y, 6, Weekday::Sun, 3) {
         return Some(Holiday::FathersDay);
     }
+
     None
 }
 
-/// Today's date in BOT_TZ
+/// Today's date in `BOT_TZ`
 pub fn today() -> NaiveDate {
     Utc::now().with_timezone(&BOT_TZ).date_naive()
 }

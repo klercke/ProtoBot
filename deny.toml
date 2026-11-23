@@ -34,4 +34,5 @@ ignore = [
   { id = "RUSTSEC-2026-0349", reason = "rustls 0.22 via serenity 0.12 (tungstenite 0.21), no fixed serenity release" },
   { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, still required by serenity" },
   { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, replacement tracked in an issue" },
+  { id = "RUSTSEC-2024-0388", reason = "derivative unmaintained, via poise 0.6; removed by poise 0.7 upgrade" },
 ]

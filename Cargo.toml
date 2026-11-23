@@ -8,7 +8,7 @@ publish = false
 chrono = "0.4.42"
 chrono-tz = "0.10.4"
 dotenvy = "0.15.7"
-poise = { version = "0.6.1-rc1" }
+poise = { version = "0.6" }
 rand = { version = "0.8.5", features = ["small_rng"] }
 regex = "1.10.2"
 rusqlite = { version = "0.43.0", features = ["bundled", "fallible_uint"] }

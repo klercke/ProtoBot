@@ -28,10 +28,28 @@
 
   packageRules: [
     {
+      // Override config:recommended, which makes dependency updates fix(deps)
+      matchPackageNames: ["*"],
+      semanticCommitType: "build",
+    },
+    {
       // Bundle every non-major update into the monthly PR
       matchUpdateTypes: ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
       groupName: "monthly dependency updates",
       groupSlug: "monthly",
+    },
+    {
+      // In 0.x, a minor bump is a breaking change, so give each one its own PR
+      matchUpdateTypes: ["minor"],
+      matchCurrentVersion: "<1.0.0",
+      groupName: null,
+      groupSlug: null,
+    },
+    {
+      // Toolchain bumps can bring new clippy lints, so keep them on their own
+      matchManagers: ["rust-toolchain"],
+      groupName: null,
+      groupSlug: null,
     },
   ],
 

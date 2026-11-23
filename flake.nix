@@ -37,7 +37,13 @@
           toolchainFor = p: p.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchainFor;
 
-          src = craneLib.cleanCargoSource ./.;
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              (craneLib.fileset.commonCargoSources ./.)
+              ./CODENAME
+            ];
+          };
 
           commonArgs = {
             inherit src;

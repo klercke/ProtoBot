@@ -48,8 +48,9 @@ pub async fn age(
 #[poise::command(slash_command, prefix_command)]
 pub async fn about(ctx: Context<'_>) -> Result<(), Error> {
     let response = format!(
-        "ProtoBot v{}. Source code and bug tracker: https://github.com/klercke/ProtoBot",
-        env!("CARGO_PKG_VERSION")
+        "ProtoBot v{}: \"{}\". Source code and bug tracker: https://github.com/klercke/ProtoBot",
+        env!("CARGO_PKG_VERSION"),
+        crate::CODENAME.trim()
     );
     ctx.say(response).await?;
     Ok(())

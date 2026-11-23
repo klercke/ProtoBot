@@ -9,11 +9,17 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    git-hooks-nix = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [ inputs.git-hooks-nix.flakeModule ];
+
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -21,6 +27,7 @@
 
       perSystem =
         {
+          config,
           system,
           pkgs,
           lib,
@@ -90,7 +97,7 @@
               }
             );
 
-          deny = craneLib.cargoDeny (
+            deny = craneLib.cargoDeny (
               commonArgs
               // {
                 src = lib.fileset.toSource {
@@ -105,12 +112,36 @@
           }
           // staticOnly;
 
+          pre-commit.settings = {
+            package = pkgs.prek;
+            hooks = {
+              rustfmt = {
+                enable = true;
+                packageOverrides = {
+                  cargo = toolchainFor pkgs;
+                  rustfmt = toolchainFor pkgs;
+                };
+              };
+              nixfmt.enable = true;
+              statix.enable = true;
+              deadnix.enable = true;
+              taplo.enable = true;
+              typos.enable = true;
+              actionlint.enable = true;
+              zizmor.enable = true;
+              convco.enable = true;
+            };
+          };
+
           devShells.default = craneLib.devShell {
             packages = [
               pkgs.cargo-nextest
               pkgs.cargo-deny
               pkgs.sqlite
-            ];
+              pkgs.prek
+            ]
+            ++ config.pre-commit.settings.enabledPackages;
+            shellHook = config.pre-commit.installationScript;
           };
 
           formatter = pkgs.nixfmt;

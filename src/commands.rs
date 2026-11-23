@@ -44,7 +44,7 @@ pub async fn age(
     Ok(())
 }
 
-/// Prints some information about ProtoBot
+/// Prints some information about `ProtoBot`
 #[poise::command(slash_command, prefix_command)]
 pub async fn about(ctx: Context<'_>) -> Result<(), Error> {
     let response = format!(
@@ -61,7 +61,7 @@ pub async fn based(
     ctx: Context<'_>,
     #[description = "Selected user"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
-    // Our dictionary of based (or not based) equivilants
+    // Our dictionary of based (or not based) equivalents
     let based_vec = vec![
         "based.",
         "based and redpilled.",
@@ -80,17 +80,14 @@ pub async fn based(
     let based_idx = based_rng.gen_range(0..based_vec.len());
 
     // "x is based." vs "based."
-    match user {
-        Some(user) => {
-            let response = format!("<@{}> is {}", user.id, based_vec[based_idx]);
-            ctx.reply(response).await?;
-        }
-        _ => {
-            let based_str = based_vec[based_idx];
-            // Capitalize the first letter of the response
-            let response = based_str[0..1].to_uppercase() + &based_str[1..];
-            ctx.reply(response).await?;
-        }
+    if let Some(user) = user {
+        let response = format!("<@{}> is {}", user.id, based_vec[based_idx]);
+        ctx.reply(response).await?;
+    } else {
+        let based_str = based_vec[based_idx];
+        // Capitalize the first letter of the response
+        let response = based_str[0..1].to_uppercase() + &based_str[1..];
+        ctx.reply(response).await?;
     }
 
     Ok(())

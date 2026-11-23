@@ -1,8 +1,8 @@
 // Module imports
 mod commands;
 mod db;
-mod santa;
 mod holidays;
+mod santa;
 
 // Imports
 use poise::serenity_prelude::{self as serenity, ActivityData};
@@ -33,7 +33,7 @@ pub struct BotData {
 async fn main() {
     // Create logs directory
     match create_dir("logs") {
-        Ok(_) => (),
+        Ok(()) => (),
         Err(e) => error!("Failed to create logs directory: {e}"),
     }
 
@@ -148,8 +148,12 @@ async fn main() {
     debug!("Client creation done!");
 
     // Build and run the framework
-    client.unwrap().start().await.unwrap();
-    debug!("Client started!");
+    client
+        .expect("Failed to create Discord client")
+        .start()
+        .await
+        .expect("Discord client stopped with an error");
+    debug!("Client stopped.");
 }
 
 async fn event_handler(
@@ -183,16 +187,14 @@ async fn event_handler(
             // Hi x, I'm dad!
             // This will capture any text after "i am", "i'm", or "im", stopping the capture on punctuation or a newline
             let im_dad_regex =
-                Regex::new(r#"(?i)(?:\b|^)(?:i['´`‘’]?m|i am)\b(.+?)(?:[\n.,;!?]|$)"#).unwrap();
-            
+                Regex::new(r"(?i)(?:\b|^)(?:i['´`‘’]?m|i am)\b(.+?)(?:[\n.,;!?]|$)")?;
 
-            // Dad jokes have a 1 in dad_joke_chance chance of ocurring, with a 100% chance on
+            // Dad jokes have a 1 in dad_joke_chance chance of occurring, with a 100% chance on
             // Father's day
             let dad_joke_chance = match holidays::current_holiday() {
                 Some(holidays::Holiday::FathersDay) => 1,
                 _ => 10,
             };
-
 
             let mut dad_joke_rng = SmallRng::from_entropy();
             if dad_joke_rng.gen_range(1..=dad_joke_chance) == 1 {
@@ -203,7 +205,7 @@ async fn event_handler(
                         new_message.reply(ctx, "Whatever you say, champ 😉").await?;
                     } else {
                         new_message
-                            .reply(ctx, format!("Hi {}, I'm dad!", captured_text))
+                            .reply(ctx, format!("Hi {captured_text}, I'm dad!"))
                             .await?;
                     }
                 }

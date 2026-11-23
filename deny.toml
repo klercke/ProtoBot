@@ -22,3 +22,16 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2026-0049", reason = "rustls-webpki 0.102 via serenity 0.12 (tungstenite 0.21), no fixed serenity release" },
+  { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.102 via serenity 0.12 (tungstenite 0.21), no fixed serenity release" },
+  { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.102 via serenity 0.12 (tungstenite 0.21), no fixed serenity release" },
+  { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.102 via serenity 0.12 (tungstenite 0.21), no fixed serenity release" },
+  { id = "RUSTSEC-2026-0382", reason = "emSign root removed in webpki-roots >= 1.0.10 (cargo update); extra filter only in rustls-webpki 0.103, blocked on serenity 0.13" },
+  { id = "RUSTSEC-2026-0346", reason = "rustls 0.22 via serenity 0.12 (tungstenite 0.21), no fixed serenity release" },
+  { id = "RUSTSEC-2026-0349", reason = "rustls 0.22 via serenity 0.12 (tungstenite 0.21), no fixed serenity release" },
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, still required by serenity" },
+  { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, replacement tracked in an issue" },
+]

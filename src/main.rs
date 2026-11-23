@@ -61,7 +61,7 @@ async fn main() {
     info!("Hello, ProtoBot here!");
 
     // Load variables from .env file
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
 
     // Initialize database connection
     let db = match Connection::open(SQLITE_DB_PATH) {

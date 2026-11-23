@@ -24,6 +24,9 @@ type Context<'a> = poise::Context<'a, BotData, Error>;
 // TODO: Make this a config option
 pub static SQLITE_DB_PATH: &str = "data/protobot.sqlite3";
 
+// Release codename, set in the release PR for each minor/major release
+pub static CODENAME: &str = include_str!("../CODENAME");
+
 // Custom data to pass to command functions
 pub struct BotData {
     pub db: Arc<Mutex<Connection>>,
@@ -171,8 +174,9 @@ async fn event_handler(
 
             // Set Discord status for the bot
             let bot_status_message = format!(
-                "ProtoBot v{}: The good, the dad, and the ugly!",
-                env!("CARGO_PKG_VERSION")
+                "ProtoBot v{}: {}!",
+                env!("CARGO_PKG_VERSION"),
+                CODENAME.trim()
             );
             ctx.set_activity(Some(ActivityData::custom(&bot_status_message)));
             info!("Set bot status to \"{}\"", bot_status_message);

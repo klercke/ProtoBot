@@ -1,0 +1,34 @@
+name: Codename
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  codename:
+    name: Codename changed
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare with last release
+        run: |
+          version=$(jq -r '."."' .release-please-manifest.json)
+          if [ "${version##*.}" != "0" ]; then
+            echo "Patch release $version, codename carries over: $(head -n1 CODENAME)"
+            exit 0
+          fi
+          last=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*')
+          if git diff --quiet "$last" HEAD -- CODENAME; then
+            echo "::error file=CODENAME::CODENAME is unchanged since $last. Name v$version before merging."
+            exit 1
+          fi
+          echo "Codename for v$version: $(head -n1 CODENAME)"

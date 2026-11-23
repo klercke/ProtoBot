@@ -42,7 +42,7 @@ See what's planned on the [roadmap](https://github.com/users/klercke/projects/1)
 
 ## Self-hosting
 
-You'll need [Nix](https://nixos.org/download/) with flakes enabled and a Discord bot token.
+You'll need a Discord bot token and either a 64-bit Linux machine or [Nix](https://nixos.org/download/) with flakes enabled.
 
 1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications) and add a bot.
 2. Under **Bot**, turn on the **Message Content Intent**.
@@ -53,13 +53,29 @@ You'll need [Nix](https://nixos.org/download/) with flakes enabled and a Discord
    DISCORD_TOKEN=your-token-here
    ```
 
-4. Run it from that directory:
+4. Run it from that directory using either option below.
 
-   ```
-   nix run github:klercke/protobot
-   ```
+### Prebuilt binary
+
+Download `protobot-x86_64-linux` and `protobot-x86_64-linux.sha256` from the [latest release](https://github.com/klercke/ProtoBot/releases/latest).
+The binary is statically linked, so it should run on any modern 64-bit Linux distro without any dependencies.
+
+```
+sha256sum -c protobot-x86_64-linux.sha256
+chmod +x protobot-x86_64-linux
+./protobot-x86_64-linux
+```
+
+### Nix
+
+```
+nix run github:klercke/protobot
+```
 
 The database is created at `data/protobot.sqlite3` and logs go to `logs/`.
+
+> [!IMPORTANT]
+> If ProtoBot fails to start with `Failed to connect to SQLite database`, make sure you created the `data/` directory in the same directory you're running ProtoBot from.
 
 ## Development
 
@@ -76,7 +92,6 @@ Or `direnv allow` if you use direnv.
 
 Bug reports, ideas, and PRs are welcome.
 Please use the issue templates, and write commits using [Conventional Commits](https://www.conventionalcommits.org/).
-
 
 ## License
 

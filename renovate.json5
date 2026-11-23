@@ -1,0 +1,46 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests",
+  ],
+  timezone: "America/New_York",
+
+  // Routine updates: one grouped PR at the start of each month
+  schedule: ["* 0-5 1 * *"],
+  minimumReleaseAge: "3 days",
+  semanticCommitType: "build",
+  labels: ["type:chore", "dependencies"],
+  dependencyDashboard: {
+    labels: ["dependencies"],
+  },
+
+  // Update flake.lock inputs too
+  nix: {
+    enabled: true,
+  },
+
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["* 0-5 1 * *"],
+  },
+
+  packageRules: [
+    {
+      // Bundle every non-major update into the monthly PR
+      matchUpdateTypes: ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
+      groupName: "monthly dependency updates",
+      groupSlug: "monthly",
+    },
+  ],
+
+  // Security fixes: weekly, separate PRs, and shown in the changelog
+  osvVulnerabilityAlerts: true,
+  vulnerabilityAlerts: {
+    schedule: ["* 0-5 * * 1"],
+    minimumReleaseAge: null,
+    semanticCommitType: "fix",
+    labels: ["type:bug", "dependencies"],
+  },
+}

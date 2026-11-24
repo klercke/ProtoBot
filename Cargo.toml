@@ -3,6 +3,7 @@ name = "protobot"
 version = "0.10.1"
 edition = "2021"
 publish = false
+license = "AGPL-3.0-or-later"
 
 [dependencies]
 chrono = "0.4.42"

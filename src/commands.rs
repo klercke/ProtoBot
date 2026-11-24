@@ -16,7 +16,7 @@ pub async fn help(
         command.as_deref(),
         poise::builtins::HelpConfiguration {
             extra_text_at_bottom:
-                "Additional documentation can be found at https://gitlab.com/klercke/ProtoBot/",
+                "Additional documentation can be found at https://github.com/klercke/ProtoBot/",
             ..Default::default()
         },
     )

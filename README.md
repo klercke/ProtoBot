@@ -42,18 +42,22 @@ See what's planned on the [roadmap](https://github.com/users/klercke/projects/1)
 
 ## Self-hosting
 
-You'll need a Discord bot token and either a 64-bit Linux machine or [Nix](https://nixos.org/download/) with flakes enabled.
+You'll need a Discord bot token and either a 64-bit Linux machine, [Nix](https://nixos.org/download/) with flakes enabled, or a container runtime (Docker, Podman, etc.).
 
 1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications) and add a bot.
 2. Under **Bot**, turn on the **Message Content Intent**.
     Without it, dad jokes and replies won't work.
-3. Make a directory for ProtoBot to live in, with a `data` folder and a `.env` file containing your token:
+3. For the binary or Nix, make a directory for ProtoBot to live in, with a `data` folder and a `.env` file containing your token:
 
    ```
    DISCORD_TOKEN=your-token-here
    ```
 
-4. Run it from that directory using either option below.
+    The database is created at `data/protobot.sqlite3` and logs go to `logs/`.
+
+    If running ProtoBot via container, you can skip this step.
+
+4. Run it from that directory using one of the options below.
 
 ### Prebuilt binary
 
@@ -72,10 +76,28 @@ chmod +x protobot-x86_64-linux
 nix run github:klercke/protobot
 ```
 
-The database is created at `data/protobot.sqlite3` and logs go to `logs/`.
+### Container
+
+Images are published to the [GitHub Container Registry](https://github.com/klercke/ProtoBot/pkgs/container/protobot).
+
+```
+docker run -d --name protobot \
+  -e DISCORD_TOKEN=your-token-here \
+  -v protobot-data:/app/data \
+  --restart unless-stopped \
+  ghcr.io/klercke/protobot:latest
+```
+
+The database lives in the `protobot-data` volume, so it will survive an image update.
+To update, pull the new image and recreate the container.
+Podman will also work.
+
+> [!TIP]
+> When using the container image in a production environment, it is recommended to pin to a version tag instead of `latest`:
+> `ghcr.io/klercke/protobot:0.11`
 
 > [!IMPORTANT]
-> If ProtoBot fails to start with `Failed to connect to SQLite database`, make sure you created the `data/` directory in the same directory you're running ProtoBot from.
+> If ProtoBot fails to start with `Failed to connect to SQLite database` and you're using the static binary or Nix release, make sure you created the `data/` directory in the same directory you're running ProtoBot from.
 
 ## Development
 

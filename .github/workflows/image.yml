@@ -1,0 +1,73 @@
+name: Image
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ github.token }}
+
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: protobot
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build image
+        run: nix build .#image
+
+      - name: Push image
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          image=ghcr.io/klercke/protobot
+          skopeo() { nix run --inputs-from . nixpkgs#skopeo -- "$@"; }
+
+          tags=("sha-${GITHUB_SHA::12}")
+          if [ "$EVENT" = "release" ]; then
+            version=${RELEASE_TAG#v}
+            tags+=("$version" "${version%.*}" latest)
+          else
+            tags+=(main)
+          fi
+
+          skopeo login ghcr.io --username "$REGISTRY_USER" --password-stdin <<< "$REGISTRY_TOKEN"
+          for tag in "${tags[@]}"; do
+            skopeo copy "docker-archive:result" "docker://$image:$tag"
+          done
+
+      - name: Add image to release notes
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=${RELEASE_TAG#v}
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          # shellcheck disable=SC2016
+          printf '\n### Container image\n\n```\ndocker pull ghcr.io/klercke/protobot:%s\n```\n' "$version" >> notes.md
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

@@ -334,41 +334,67 @@ pub async fn santa_set_time(
         return Ok(());
     };
 
+    for ts in [draw_at, gift_at].into_iter().flatten() {
+        if ts != 0 {
+            event_start(ts)?;
+        }
+    }
+
+    let http = ctx.serenity_context().http.clone();
+    let mut notes: Vec<String> = Vec::new();
+
     // Update struct values and event times
     if let Some(ts) = draw_at {
+        notes.extend(
+            apply_time(
+                &http,
+                discord_guild,
+                &mut guild.drawing_time,
+                guild.drawing_event_id,
+                ts,
+                "drawing",
+            )
+            .await,
+        );
         if ts == 0 {
-            guild.drawing_time = None;
             info!(
                 "User {} cleared Secret Santa drawing time for guild {}",
                 ctx.author(),
-                guild_id
+                guild_id,
             );
         } else {
-            // TODO: Make this also update the Discord Scheduled event
             info!(
-                "User {} updated Secret Santa drawing time for guild {} to {}",
+                "User {} set Secret Santa drawing time for guild {} to {}",
                 ctx.author(),
                 guild_id,
-                &ts.to_string()
+                ts
             );
         }
     }
     if let Some(ts) = gift_at {
+        notes.extend(
+            apply_time(
+                &http,
+                discord_guild,
+                &mut guild.gifting_time,
+                guild.gifting_event_id,
+                ts,
+                "gifting",
+            )
+            .await,
+        );
         if ts == 0 {
-            guild.gifting_time = None;
             info!(
                 "User {} cleared Secret Santa gifting time for guild {}",
                 ctx.author(),
-                guild_id
+                guild_id,
             );
         } else {
-            // TODO: Make this also update the Discord Scheduled event
-            guild.gifting_time = Some(ts);
             info!(
-                "User {} updated Secret Santa gifting time for guild {} to {}",
+                "User {} set Secret Santa gifting time for guild {} to {}",
                 ctx.author(),
                 guild_id,
-                &ts.to_string()
+                ts
             );
         }
     }
@@ -390,10 +416,72 @@ pub async fn santa_set_time(
         |ts| format!("<t:{ts}:F> (<t:{ts}:R>)"),
     );
 
-    ctx.say(format!(
+    let mut msg = format!(
         "Secret Santa times for this guild:\n**Draw:** {draw_display}\n**Gift:** {gift_display}"
-    ))
-    .await?;
+    );
+    for note in notes {
+        let _ = write!(msg, "\n-# {note}");
+    }
+    ctx.say(msg).await?;
+
+    Ok(())
+}
+
+/// Sets or clears the time for a single Secret Santa event in Discord.
+/// Returns a note to be presented to the user when their attention is needed.
+async fn apply_time(
+    http: &serenity::Http,
+    guild: serenity::GuildId,
+    time: &mut Option<i64>,
+    event_id: Option<u64>,
+    ts: i64,
+    label: &str,
+) -> Option<String> {
+    if ts == 0 {
+        *time = None;
+        return event_id.map(|_| {
+            format!(
+                "The Discord {label} event has had its time removed, but the event was not deleted. Delete it by hand if you don't want it."
+            )
+        });
+    }
+
+    *time = Some(ts);
+    let Some(event_id) = event_id else {
+        return Some(format!("There's no Discord {label} event to update."));
+    };
+    if let Err(e) = move_event(http, guild, event_id, ts).await {
+        warn!(?e, "Failed to move {label} event for guild {guild}");
+        return Some(format!("Couldn't update the Discord {label} event."));
+    }
+    None
+}
+
+/// Converts a Unix timestamp to an event start time.
+/// Fails for a timestamp that chrono can't represent.
+fn event_start(timestamp: i64) -> Result<DateTime<Utc>, Error> {
+    Ok(Utc
+        .timestamp_opt(timestamp, 0)
+        .single()
+        .ok_or("Invalid timestamp")?)
+}
+
+/// Moves an existing Discord scheduled event to a new start time.
+async fn move_event(
+    http: &serenity::Http,
+    guild: serenity::GuildId,
+    event_id: u64,
+    timestamp: i64,
+) -> Result<(), Error> {
+    let start = event_start(timestamp)?;
+    let current = guild.scheduled_event(http, event_id, false).await?;
+    let duration = current.end_time.map_or(5 * 60, |end| {
+        end.unix_timestamp() - current.start_time.unix_timestamp()
+    });
+    let builder = serenity::EditScheduledEvent::new()
+        .start_time(start)
+        .end_time(start + Duration::seconds(duration));
+    guild.edit_scheduled_event(http, event_id, builder).await?;
     Ok(())
 }
 

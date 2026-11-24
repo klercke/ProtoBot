@@ -70,7 +70,24 @@
             }
           ) { };
 
-          staticOnly = lib.optionalAttrs (system == "x86_64-linux") { inherit protobot-static; };
+          image = pkgs.dockerTools.buildLayeredImage {
+            name = "ghcr.io/klercke/protobot";
+            tag = protobot-static.version;
+            extraCommands = "mkdir -p app/data app/logs";
+            fakeRootCommands = "chown -R 65534:65534 app";
+            config = {
+              Entrypoint = [ "${protobot-static}/bin/protobot" ];
+              WorkingDir = "/app";
+              User = "65534:65534";
+              Volumes."/app/data" = { };
+              Labels = {
+                "org.opencontainers.image.source" = "https://github.com/klercke/ProtoBot";
+                "org.opencontainers.image.licenses" = "GPL-3.0-only";
+              };
+            };
+          };
+
+          staticOnly = lib.optionalAttrs (system == "x86_64-linux") { inherit protobot-static image; };
         in
         {
           _module.args.pkgs = import inputs.nixpkgs {

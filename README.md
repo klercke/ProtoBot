@@ -1,4 +1,9 @@
-# ProtoBot
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/lockup-dark.svg">
+    <img src="assets/logo/lockup-light.svg" alt="ProtoBot" height="96">
+  </picture>
+</h1>
 
 A Discord bot made for friends.
 Free and open source, forever.

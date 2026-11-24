@@ -82,7 +82,7 @@
               Volumes."/app/data" = { };
               Labels = {
                 "org.opencontainers.image.source" = "https://github.com/klercke/ProtoBot";
-                "org.opencontainers.image.licenses" = "GPL-3.0-only";
+                "org.opencontainers.image.licenses" = "AGPL-3.0-or-later";
               };
             };
           };
@@ -152,6 +152,7 @@
               actionlint.enable = true;
               zizmor.enable = true;
               convco.enable = true;
+              reuse.enable = true;
             };
           };
 

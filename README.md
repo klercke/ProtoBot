@@ -6,7 +6,10 @@
 </h1>
 
 A Discord bot made for friends.
-Free and open source, forever.
+Free and open source forever.
+
+[![REUSE status](https://api.reuse.software/badge/github.com/klercke/ProtoBot)](https://api.reuse.software/info/github.com/klercke/ProtoBot)
+[![CI](https://github.com/klercke/ProtoBot/actions/workflows/ci.yml/badge.svg)](https://github.com/klercke/ProtoBot/actions/workflows/ci.yml)
 
 ## Features
 
@@ -122,4 +125,9 @@ Please use the issue templates, and write commits using [Conventional Commits](h
 
 ## License
 
-[GPL-3.0](LICENSE)
+All code in this repository is licensed under [AGPL-3.0-or-later](./LICENSES/AGPL-3.0-or-later.txt), unless otherwise stated.
+This repository's GitHub workflows and CI tooling configurations are licensed under [CC0-1.0](./LICENSES/CC0-1.0.txt).
+The ProtoBot logo(s) and related assets are licensed under [CC-BY-SA-4.0](./LICENSES/CC-BY-SA-4.0.txt).
+The lockups combine the logo ([CC-BY-SA-4.0](./LICENSES/CC-BY-SA-4.0.txt)) with wordmark outlines from the Audiowide font, licensed under [OFL-1.1](./LICENSES/OFL-1.1.txt).
+
+See [REUSE.toml](./REUSE.toml) for exactly which files are under each license.

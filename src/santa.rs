@@ -334,6 +334,7 @@ pub async fn santa_set_time(
         return Ok(());
     };
 
+    // Check for out-of-range timestamps before changing anything
     for ts in [draw_at, gift_at].into_iter().flatten() {
         if ts != 0 {
             event_start(ts)?;
@@ -360,7 +361,7 @@ pub async fn santa_set_time(
             info!(
                 "User {} cleared Secret Santa drawing time for guild {}",
                 ctx.author(),
-                guild_id,
+                guild_id
             );
         } else {
             info!(
@@ -387,7 +388,7 @@ pub async fn santa_set_time(
             info!(
                 "User {} cleared Secret Santa gifting time for guild {}",
                 ctx.author(),
-                guild_id,
+                guild_id
             );
         } else {
             info!(
@@ -427,7 +428,7 @@ pub async fn santa_set_time(
     Ok(())
 }
 
-/// Sets or clears the time for a single Secret Santa event in Discord.
+/// Sets or clears the time for a single Secret Santa event and moves its Discord event to match.
 /// Returns a note to be presented to the user when their attention is needed.
 async fn apply_time(
     http: &serenity::Http,

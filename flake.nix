@@ -148,7 +148,10 @@
               statix.enable = true;
               deadnix.enable = true;
               taplo.enable = true;
-              typos.enable = true;
+              typos = {
+                enable = true;
+                excludes = [ "^CHANGELOG\\.md$" ];
+              };
               actionlint.enable = true;
               zizmor.enable = true;
               convco.enable = true;

@@ -96,10 +96,10 @@ jobs:
           sudo apt-get install -y netbird
 
           for _ in $(seq 30); do
-            sudo test -S /var/run/netbird/sock && break
+            sudo test -S /var/run/netbird.sock && break
             sleep 1
           done
-          if ! sudo test -S /var/run/netbird/sock; then
+          if ! sudo test -S /var/run/netbird.sock; then
             echo "::error::NetBird daemon did not open its socket"
             sudo journalctl -u netbird --no-pager -n 100 || true
             exit 1

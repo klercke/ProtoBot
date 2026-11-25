@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.0](https://github.com/klercke/ProtoBot/compare/v0.10.1...v0.11.0) (2026-11-25)
+
+
+* release 0.11.0 ([#129](https://github.com/klercke/ProtoBot/issues/129)) ([a07530b](https://github.com/klercke/ProtoBot/commit/a07530bb23f7c12adfec2a752c0683ad5f84224b))
+
+
+### Documentation
+
+* add new logo ([#110](https://github.com/klercke/ProtoBot/issues/110)) ([0278d96](https://github.com/klercke/ProtoBot/commit/0278d96b819a59862b7bf25baa494c52ac826f67))
+* relicense to AGPL-3.0-or-later and adopt REUSE ([f1ba520](https://github.com/klercke/ProtoBot/commit/f1ba520bb76ee2f02c2d3ca5f32904f146604b27))
+
 ## [0.10.1](https://github.com/klercke/ProtoBot/compare/v0.10.0...v0.10.1) (2026-11-24)
 
 

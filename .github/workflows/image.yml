@@ -71,3 +71,73 @@ jobs:
           # shellcheck disable=SC2016
           printf '\n### Container image\n\n```\ndocker pull ghcr.io/klercke/protobot:%s\n```\n' "$version" >> notes.md
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+
+  deploy:
+    name: Deploy to ${{ github.event_name == 'release' && 'production' || 'preview' }}
+    needs: image
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'release' && 'production' || 'preview' }}
+    concurrency:
+      group: deploy-${{ github.event_name == 'release' && 'production' || 'preview' }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ github.token }}
+
+      - name: Join NetBird
+        env:
+          NETBIRD_SETUP_KEY: ${{ secrets.NETBIRD_SETUP_KEY }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        run: |
+          nb="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#netbird)/bin/netbird"
+          echo "NETBIRD=$nb" >> "$GITHUB_ENV"
+          sudo "$nb" service install
+          sudo "$nb" service start
+          sudo "$nb" up --setup-key "$NETBIRD_SETUP_KEY" --hostname "gha-$GITHUB_RUN_ID"
+          for _ in $(seq 30); do
+            getent hosts "$DEPLOY_HOST" && exit 0
+            sleep 2
+          done
+          echo "::error::$DEPLOY_HOST did not resolve over NetBird"
+          sudo "$nb" status --detail
+          exit 1
+
+      - name: Deploy
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.PROTOBOT01_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$EVENT" = "release" ]; then
+            tag=${RELEASE_TAG#v}
+          else
+            tag="sha-${GITHUB_SHA::12}"
+          fi
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "protobot@$DEPLOY_HOST" "$tag"
+
+      - name: Leave NetBird
+        if: always()
+        run: |
+          if [ -n "${NETBIRD:-}" ]; then
+            sudo "$NETBIRD" down || true
+          fi

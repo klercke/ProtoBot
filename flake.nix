@@ -168,8 +168,9 @@
 
           devShells.default = craneLib.devShell {
             packages = [
-              pkgs.cargo-nextest
               pkgs.cargo-deny
+              pkgs.cargo-llvm-cov
+              pkgs.cargo-nextest
               pkgs.sqlite
               pkgs.prek
             ]

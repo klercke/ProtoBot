@@ -982,9 +982,30 @@ pub async fn santa_shuffle(
     };
 
     // Send DMs
+    send_assignment_dms(
+        &ctx.serenity_context().http,
+        &guild_id,
+        &guild_name,
+        &intro,
+        dm_info,
+    )
+    .await;
+
+    info!(%guild_id, "Secret Santa shuffle completed");
+    Ok(())
+}
+
+/// Sends each Santa their assignment by DM.
+async fn send_assignment_dms(
+    http: &serenity::Http,
+    guild_id: &str,
+    guild_name: &str,
+    intro: &str,
+    dm_info: Vec<(u64, u64, String)>,
+) {
     for (giver_id, giftee_discord_id, giftee_steam) in dm_info {
         let user_id = UserId::new(giver_id);
-        match user_id.to_user(&ctx.serenity_context().http).await {
+        match user_id.to_user(http).await {
             Ok(user) => {
                 let wishlist = format!("{giftee_steam}/wishlist");
                 let dm_message = serenity::CreateMessage::default()
@@ -992,7 +1013,7 @@ pub async fn santa_shuffle(
                         "🎅 {intro} <@{giftee_discord_id}>. Check out their [Steam wishlist]({wishlist}) and run `/santa_info` in {guild_name} to check when your gift should be scheduled to arrive!"
                     ));
 
-                if let Err(e) = user.dm(&ctx.serenity_context().http, dm_message).await {
+                if let Err(e) = user.dm(http, dm_message).await {
                     warn!(
                         ?e,
                         %guild_id,
@@ -1013,9 +1034,6 @@ pub async fn santa_shuffle(
             }
         }
     }
-
-    info!(%guild_id, "Secret Santa shuffle completed");
-    Ok(())
 }
 
 #[cfg(test)]

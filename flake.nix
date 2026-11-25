@@ -41,6 +41,7 @@
             fileset = lib.fileset.unions [
               (craneLib.fileset.commonCargoSources ./.)
               ./CODENAME
+              ./migrations
             ];
           };
 
@@ -151,6 +152,12 @@
               typos = {
                 enable = true;
                 excludes = [ "^CHANGELOG\\.md$" ];
+              };
+              sqlfluff = {
+                enable = true;
+                name = "sqlfluff";
+                entry = "${pkgs.sqlfluff}/bin/sqlfluff lint";
+                files = "\\.sql$";
               };
               actionlint.enable = true;
               zizmor.enable = true;

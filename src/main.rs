@@ -67,7 +67,7 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     // Initialize database connection
-    let db = match Connection::open(SQLITE_DB_PATH) {
+    let mut db = match Connection::open(SQLITE_DB_PATH) {
         Ok(c) => c,
         Err(e) => {
             error!(?e, "Failed to connect to SQLite database (Hint: Make sure the `data/` directory exists)");
@@ -75,9 +75,9 @@ async fn main() {
         }
     };
 
-    if let Err(e) = db::init(&db) {
-        error!(?e, "Database initialization failed");
-        panic!("DB init failed");
+    if let Err(e) = db::migrate(&mut db) {
+        error!(?e, "Database migration failed");
+        panic!("DB migration failed");
     }
 
     // Add database to bot data

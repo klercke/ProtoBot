@@ -159,8 +159,12 @@ impl Guild {
     }
 }
 
-/// Initialize a Secret Santa event in a server (requires Administrator permissions in the server).
-#[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
+/// Initialize a Secret Santa event in a server.
+#[poise::command(
+    slash_command,
+    default_member_permissions = "MANAGE_EVENTS",
+    required_bot_permissions = "MANAGE_EVENTS"
+)]
 #[expect(
     clippy::too_many_lines,
     reason = "This will be split up during the v0.13 module refactor"
@@ -312,8 +316,12 @@ pub async fn santa_create(
     Ok(())
 }
 
-/// Sets the drawing and/or gifting time for the Secret Santa
-#[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
+/// Sets the drawing and/or gifting time for the Secret Santa.
+#[poise::command(
+    slash_command,
+    default_member_permissions = "MANAGE_EVENTS",
+    required_bot_permissions = "MANAGE_EVENTS"
+)]
 pub async fn santa_set_time(
     ctx: Context<'_>,
     #[description = "Drawing time (Unix timestamp)"] draw_at: Option<i64>,
@@ -487,7 +495,7 @@ async fn move_event(
 }
 
 /// Prints info about the current guild's Secret Santa event
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command)]
 pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
@@ -564,8 +572,12 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Deletes the Secret Santa event in this server
-#[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
+/// Deletes the Secret Santa event for this server.
+#[poise::command(
+    slash_command,
+    default_member_permissions = "MANAGE_EVENTS",
+    required_bot_permissions = "MANAGE_EVENTS"
+)]
 pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
     let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
     let guild_id = discord_guild.to_string();
@@ -624,7 +636,7 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// Register for this server's Secret Santa
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command)]
 pub async fn santa_register(
     ctx: Context<'_>,
     #[description = "Your Steam profile URL"] steam_url: String,
@@ -677,7 +689,7 @@ pub async fn santa_register(
 }
 
 /// List all Secret Santa participants in this server
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command)]
 pub async fn santa_list(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
@@ -725,8 +737,8 @@ pub async fn santa_list(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-// Unregisters you from this server's Secret Santa
-#[poise::command(slash_command, prefix_command)]
+/// Unregisters you from this server's Secret Santa
+#[poise::command(slash_command)]
 pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
@@ -760,8 +772,9 @@ pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Assign giftees to all Secret Santa participants. If assignments are already made, reshuffle
-#[poise::command(slash_command, prefix_command, required_permissions = "ADMINISTRATOR")]
+/// Assign giftees to all Secret Santa participants.
+/// If assignments are already made, reshuffle.
+#[poise::command(slash_command, default_member_permissions = "MANAGE_EVENTS")]
 pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
     use rand::seq::SliceRandom;
     use rand::thread_rng;

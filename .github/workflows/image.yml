@@ -5,6 +5,7 @@ on:
     branches: [main]
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions: {}
 
@@ -94,8 +95,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y netbird
 
-          sudo netbird service install
-          sudo netbird service start
           for _ in $(seq 30); do
             sudo test -S /var/run/netbird/sock && break
             sleep 1

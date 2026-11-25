@@ -80,34 +80,39 @@ jobs:
     concurrency:
       group: deploy-${{ github.event_name == 'release' && 'production' || 'preview' }}
       cancel-in-progress: false
-    permissions:
-      contents: read
+    permissions: {}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
-        with:
-          extra_nix_config: |
-            access-tokens = github.com=${{ github.token }}
-
       - name: Join NetBird
         env:
           NETBIRD_SETUP_KEY: ${{ secrets.NETBIRD_SETUP_KEY }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
         run: |
-          nb="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#netbird)/bin/netbird"
-          echo "NETBIRD=$nb" >> "$GITHUB_ENV"
-          sudo "$nb" service install
-          sudo "$nb" service start
-          sudo "$nb" up --setup-key "$NETBIRD_SETUP_KEY" --hostname "gha-$GITHUB_RUN_ID"
+          curl -fsSL https://pkgs.netbird.io/debian/public.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/netbird-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] https://pkgs.netbird.io/debian stable main' \
+            | sudo tee /etc/apt/sources.list.d/netbird.list
+          sudo apt-get update
+          sudo apt-get install -y netbird
+
+          sudo netbird service install
+          sudo netbird service start
+          for _ in $(seq 30); do
+            sudo test -S /var/run/netbird/sock && break
+            sleep 1
+          done
+          if ! sudo test -S /var/run/netbird/sock; then
+            echo "::error::NetBird daemon did not open its socket"
+            sudo journalctl -u netbird --no-pager -n 100 || true
+            exit 1
+          fi
+
+          sudo netbird up --setup-key "$NETBIRD_SETUP_KEY" --hostname "gha-$GITHUB_RUN_ID"
           for _ in $(seq 30); do
             getent hosts "$DEPLOY_HOST" && exit 0
             sleep 2
           done
           echo "::error::$DEPLOY_HOST did not resolve over NetBird"
-          sudo "$nb" status --detail
+          sudo netbird status --detail
           exit 1
 
       - name: Deploy
@@ -137,7 +142,4 @@ jobs:
 
       - name: Leave NetBird
         if: always()
-        run: |
-          if [ -n "${NETBIRD:-}" ]; then
-            sudo "$NETBIRD" down || true
-          fi
+        run: sudo netbird down || true

@@ -188,9 +188,9 @@ pub async fn santa_create(
     let guild_id = discord_guild.to_string();
 
     info!(
-        "Received request to create Secret Santa in guild {} by user {}",
-        guild_id,
-        ctx.author()
+        %guild_id,
+        user_id = %ctx.author().id,
+        "Received request to create Secret Santa"
     );
 
     let response = "Initializing Secret Santa for this server...";
@@ -199,7 +199,7 @@ pub async fn santa_create(
     // Show bot as typing. Ignore any errors that come from this
     let typing = ctx.channel_id().broadcast_typing(&ctx).await;
     if let Err(e) = typing {
-        warn!(?e, "Failed to start typing indicator for Secret Santa init");
+        warn!(?e, %guild_id, "Failed to start typing indicator for Secret Santa init");
     }
 
     // Get a database handle and lock connection
@@ -216,7 +216,7 @@ pub async fn santa_create(
         )
         .optional()
         .map_err(|e| {
-            error!(?e, "Failed to query existing servers!");
+            error!(?e, %guild_id, "Failed to query existing servers");
             e
         })?;
 
@@ -224,19 +224,16 @@ pub async fn santa_create(
     if guild_exists.is_some() {
         ctx.say("A Secret Santa event already exists for this server!")
             .await?;
-        info!(
-            "Secret Santa already exists in guild {}. Ignoring request...",
-            guild_id
-        );
+        info!(%guild_id, "Secret Santa already exists, ignoring request");
         return Ok(());
     }
 
     // Create guild in Santa database
     let _id = Guild::create(&db, &guild_id, draw_at, gift_at, None, None).map_err(|e| {
-        error!(?e, "Failed to create Secret Santa for guild {}", guild_id);
+        error!(?e, %guild_id, "Failed to create Secret Santa");
         e
     })?;
-    info!("Created Secret Santa database entry for guild {}", guild_id);
+    info!(%guild_id, "Created Secret Santa database entry");
 
     // Get HTTP to create events
     let http = ctx.serenity_context().http.clone();
@@ -260,16 +257,13 @@ pub async fn santa_create(
             Ok(event) => {
                 let _r = Guild::set_draw_event(&db, &guild_id, &event.id.get().to_string());
                 info!(
-                    "Successfully created Secret Santa drawing event for guild {}. Event ID: {}",
-                    guild_id,
-                    event.id.get()
+                    %guild_id,
+                    event_id = event.id.get(),
+                    "Created Secret Santa drawing event"
                 );
             }
             Err(e) => {
-                error!(
-                    "Failed to create Secret Santa drawing event for guild {}: {}",
-                    guild_id, e
-                );
+                error!(?e, %guild_id, "Failed to create Secret Santa drawing event");
                 ctx.say(format!(
                     "Failed to create Discord event for Secret Santa drawing: {e}"
                 ))
@@ -299,16 +293,13 @@ pub async fn santa_create(
             Ok(event) => {
                 let _r = Guild::set_gift_event(&db, &guild_id, &event.id.get().to_string());
                 info!(
-                    "Successfully created Secret Santa gifting event for guild {}. Event ID: {}",
-                    guild_id,
-                    event.id.get()
+                    %guild_id,
+                    event_id = event.id.get(),
+                    "Created Secret Santa gifting event"
                 );
             }
             Err(e) => {
-                error!(
-                    "Failed to create Secret Santa gifting event for guild {}: {}",
-                    guild_id, e
-                );
+                error!(?e, %guild_id, "Failed to create Secret Santa gifting event");
                 ctx.say(format!(
                     "Failed to create Discord event for Secret Santa gifting: {e}"
                 ))
@@ -319,10 +310,7 @@ pub async fn santa_create(
 
     debug!("Released database lock after Secret Santa initialization.");
     ctx.say("Secret Santa initialized for this server!").await?;
-    info!(
-        "Successfully initialized Secret Santa in guild {}",
-        guild_id
-    );
+    info!(%guild_id, "Initialized Secret Santa");
     Ok(())
 }
 
@@ -377,16 +365,16 @@ pub async fn santa_set_time(
         );
         if ts == 0 {
             info!(
-                "User {} cleared Secret Santa drawing time for guild {}",
-                ctx.author(),
-                guild_id
+                %guild_id,
+                user_id = %ctx.author().id,
+                "Cleared Secret Santa drawing time"
             );
         } else {
             info!(
-                "User {} set Secret Santa drawing time for guild {} to {}",
-                ctx.author(),
-                guild_id,
-                ts
+                %guild_id,
+                user_id = %ctx.author().id,
+                draw_at = ts,
+                "Set Secret Santa drawing time"
             );
         }
     }
@@ -404,16 +392,16 @@ pub async fn santa_set_time(
         );
         if ts == 0 {
             info!(
-                "User {} cleared Secret Santa gifting time for guild {}",
-                ctx.author(),
-                guild_id
+                %guild_id,
+                user_id = %ctx.author().id,
+                "Cleared Secret Santa gifting time"
             );
         } else {
             info!(
-                "User {} set Secret Santa gifting time for guild {} to {}",
-                ctx.author(),
-                guild_id,
-                ts
+                %guild_id,
+                user_id = %ctx.author().id,
+                gift_at = ts,
+                "Set Secret Santa gifting time"
             );
         }
     }
@@ -470,7 +458,7 @@ async fn apply_time(
         return Some(format!("There's no Discord {label} event to update."));
     };
     if let Err(e) = move_event(http, guild, event_id, ts).await {
-        warn!(?e, "Failed to move {label} event for guild {guild}");
+        warn!(?e, guild_id = %guild, label, "Failed to move Secret Santa event");
         return Some(format!("Couldn't update the Discord {label} event."));
     }
     None
@@ -504,6 +492,7 @@ async fn move_event(
     Ok(())
 }
 
+/// Checks the state of Secret Santa registrations for a guild
 fn registration_state(
     db: &rusqlite::Connection,
     guild_id: &str,
@@ -513,17 +502,7 @@ fn registration_state(
         return Ok(RegistrationState::NoEvent);
     };
 
-    // Check if the drawing has already happened
-    let query = r"
-        SELECT EXISTS(
-            SELECT 1
-            FROM santa_assignments AS a
-            JOIN santa_participants AS p
-                ON a.participant_id = p.id
-            WHERE p.guild_id = ?1
-        )
-    ";
-    let drawn: bool = db.query_row(query, [guild_id], |row| row.get(0))?;
+    let drawn = has_assignments(db, guild_id)?;
     if drawn {
         return Ok(RegistrationState::AlreadyDrawn);
     }
@@ -538,6 +517,21 @@ fn registration_state(
 
     // None of the above are true, registration is open
     Ok(RegistrationState::Open)
+}
+
+/// Checks to see if the Secret Santa drawing has already happened for a guild
+fn has_assignments(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<bool> {
+    let query = r"
+        SELECT EXISTS(
+            SELECT 1
+            FROM santa_assignments AS a
+            JOIN santa_participants AS p
+                ON a.participant_id = p.id
+            WHERE p.guild_id = ?1
+        )
+    ";
+
+    db.query_row(query, [guild_id], |row| row.get(0))
 }
 
 /// Prints info about the current guild's Secret Santa event
@@ -630,9 +624,9 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
     let db = db.lock().await;
 
     info!(
-        "User {} requested removal of Secret Santa event in guild {}",
-        ctx.author().id,
-        guild_id
+        %guild_id,
+        user_id = %ctx.author().id,
+        "Requested removal of Secret Santa event"
     );
 
     // Fetch guild row
@@ -646,19 +640,16 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
     let http = ctx.serenity_context().http.clone();
     if let Some(event_id) = guild.drawing_event_id {
         if let Err(e) = discord_guild.delete_scheduled_event(&http, event_id).await {
-            warn!(?e, "Failed to delete drawing event for guild {}", guild_id);
+            warn!(?e, %guild_id, event_id, "Failed to delete drawing event");
         }
     }
     if let Some(event_id) = guild.gifting_event_id {
         if let Err(e) = discord_guild.delete_scheduled_event(&http, event_id).await {
-            warn!(?e, "Failed to delete gifting event for guild {}", guild_id);
+            warn!(?e, %guild_id, event_id, "Failed to delete gifting event");
         }
     }
 
-    debug!(
-        "Clearing Secret Santa rows from database for guild {}",
-        guild_id
-    );
+    debug!(%guild_id, "Clearing Secret Santa rows from database");
     // Delete rows from DB
     db.execute("DELETE FROM santa_guilds WHERE guild_id = ?1", [&guild_id])?;
     db.execute(
@@ -671,10 +662,7 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
     )?;
 
     ctx.say("Secret Santa event deleted successfully!").await?;
-    info!(
-        "Successfully deleted Secret Santa event for guild {}",
-        guild_id
-    );
+    info!(%guild_id, "Deleted Secret Santa event");
 
     Ok(())
 }
@@ -753,10 +741,7 @@ pub async fn santa_register(
     };
     Participant::insert(&db, &participant)?;
 
-    info!(
-        "User {} registered for Secret Santa in guild {}",
-        user_id, guild_id
-    );
+    info!(%guild_id, %user_id, "User registered for Secret Santa");
 
     ctx.say(format!(
         "Successfully registered for Secret Santa! Your Steam profile: {steam_url}"
@@ -867,25 +852,25 @@ pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
     if deleted == 0 {
         ctx.say("You were not registered for Secret Santa.").await?;
         info!(
-            "User {} tried to unregister from Secret Santa in guild {}, but was not registered",
-            user_id, guild_id
+            %guild_id,
+            %user_id,
+            "User tried to unregister from Secret Santa, but was not registered"
         );
     } else {
         ctx.say("You have been unregistered from Secret Santa.")
             .await?;
-        info!(
-            "User {} unregistered from Secret Santa in guild {}",
-            user_id, guild_id
-        );
+        info!(%guild_id, %user_id, "User unregistered from Secret Santa");
     }
 
     Ok(())
 }
 
 /// Assign giftees to all Secret Santa participants.
-/// If assignments are already made, reshuffle.
 #[poise::command(slash_command, default_member_permissions = "MANAGE_EVENTS")]
-pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn santa_shuffle(
+    ctx: Context<'_>,
+    #[description = "Replace existing assignments and DM everyone again"] force: Option<bool>,
+) -> Result<(), Error> {
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
@@ -900,16 +885,32 @@ pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
         .map_or_else(|_| "this server".to_string(), |g| g.name);
 
     info!(
-        "User {} requested Secret Santa shuffle in guild {}",
-        ctx.author(),
-        guild_id
+        %guild_id,
+        user_id = %ctx.author().id,
+        "Requested Secret Santa shuffle"
     );
 
     let db = ctx.data().db.clone();
 
+    // Check to make sure participants aren't already assigned
+    let drawn = {
+        let db = db.lock().await;
+        has_assignments(&db, &guild_id)?
+    };
+    if drawn && !force.unwrap_or(false) {
+        info!(
+            %guild_id,
+            user_id = %ctx.author().id,
+            "User tried to shuffle after guild was already shuffled"
+        );
+        let r = poise::CreateReply::default().content("This server has already had its Secret Santas assigned. If you want to re-assign, re-run the command with `force: True`").ephemeral(true);
+        ctx.send(r).await?;
+        return Ok(());
+    }
+
     // Get participants, shuffle, and assign giftees
     let guild_id_clone = guild_id.clone();
-    let dm_info: Vec<(u64, u64, String)> = tokio::task::spawn_blocking(move || -> Result<_, rusqlite::Error> {
+    let (dm_info, replaced): (Vec<(u64, u64, String)>, usize) = tokio::task::spawn_blocking(move || -> Result<_, rusqlite::Error> {
         let db = db.blocking_lock();
 
         // Get participants
@@ -918,7 +919,7 @@ pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         if participants.len() < 2 {
-            return Ok(vec![]);
+            return Ok((vec![], 0));
         }
 
         // Shuffle
@@ -926,7 +927,7 @@ pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
         shuffled.shuffle(&mut thread_rng());
 
         // Clear old assignments
-        db.execute(
+        let replaced = db.execute(
             "DELETE FROM santa_assignments WHERE participant_id IN (SELECT id FROM santa_participants WHERE guild_id = ?1)",
             [&guild_id_clone],
         )?;
@@ -955,7 +956,7 @@ pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
             ));
         }
 
-        Ok(dm_info)
+        Ok((dm_info, replaced))
     })
     .await??;
 
@@ -965,36 +966,74 @@ pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
         return Ok(());
     }
 
-    ctx.say("Secret Santa assignments shuffled and stored in the database! DMs will be sent to participants.").await?;
+    // Notify caller of success
+    let response = if replaced > 0 {
+        format!("{replaced} Secret Santa assignments reshuffled and stored in the database! DMs will be sent to participants.")
+    } else {
+        "Secret Santa assignments shuffled and stored in the database! DMs will be sent to participants.".to_string()
+    };
+    ctx.say(response).await?;
+
+    // Build DM intro
+    let intro = if replaced > 0 {
+        format!("Secret Santas have been reshuffled in {guild_name}! Your new assigned giftee is")
+    } else {
+        format!("It's Secret Santa time in {guild_name}! Your assigned giftee is")
+    };
 
     // Send DMs
+    send_assignment_dms(
+        &ctx.serenity_context().http,
+        &guild_id,
+        &guild_name,
+        &intro,
+        dm_info,
+    )
+    .await;
+
+    info!(%guild_id, "Secret Santa shuffle completed");
+    Ok(())
+}
+
+/// Sends each Santa their assignment by DM.
+async fn send_assignment_dms(
+    http: &serenity::Http,
+    guild_id: &str,
+    guild_name: &str,
+    intro: &str,
+    dm_info: Vec<(u64, u64, String)>,
+) {
     for (giver_id, giftee_discord_id, giftee_steam) in dm_info {
         let user_id = UserId::new(giver_id);
-        match user_id.to_user(&ctx.serenity_context().http).await {
+        match user_id.to_user(http).await {
             Ok(user) => {
+                let wishlist = format!("{giftee_steam}/wishlist");
                 let dm_message = serenity::CreateMessage::default()
                     .content(format!(
-                        "🎅 It's Secret Santa time in {}! Your assigned giftee is <@{}>. Check out their [Steam wishlist]({}) and run `/santa_info` in {} to check when your gift should be scheduled to arrive!",
-                        guild_name, giftee_discord_id, (giftee_steam + "/wishlist"), guild_name
+                        "🎅 {intro} <@{giftee_discord_id}>. Check out their [Steam wishlist]({wishlist}) and run `/santa_info` in {guild_name} to check when your gift should be scheduled to arrive!"
                     ));
 
-                if let Err(e) = user.dm(&ctx.serenity_context().http, dm_message).await {
+                if let Err(e) = user.dm(http, dm_message).await {
                     warn!(
                         ?e,
-                        "Failed to DM participant {} their Secret Santa assignment", giver_id
+                        %guild_id,
+                        user_id = giver_id,
+                        "Failed to DM participant their Secret Santa assignment"
                     );
                 } else {
-                    debug!("Sent DM to participant {} with giftee info", giver_id);
+                    debug!(%guild_id, user_id = giver_id, "Sent Secret Santa assignment DM");
                 }
             }
             Err(e) => {
-                warn!(?e, "Failed to fetch user {} for Secret Santa DM", giver_id);
+                warn!(
+                    ?e,
+                    %guild_id,
+                    user_id = giver_id,
+                    "Failed to fetch user for Secret Santa DM"
+                );
             }
         }
     }
-
-    info!("Secret Santa shuffle completed for guild {}", guild_id);
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1009,6 +1048,16 @@ mod tests {
         db::migrate(&mut conn).unwrap();
 
         conn
+    }
+
+    fn add_participant(conn: &rusqlite::Connection, user_id: &str) -> i64 {
+        let p = Participant {
+            guild_id: String::from("8675309"),
+            user_id: String::from(user_id),
+            registered_at: Utc::now().timestamp(),
+            steam: None,
+        };
+        Participant::insert(conn, &p).unwrap()
     }
 
     #[test]
@@ -1059,21 +1108,8 @@ mod tests {
 
         Guild::create(&conn, "8675309", None, None, None, None).unwrap();
 
-        let p1 = Participant {
-            guild_id: String::from("8675309"),
-            user_id: String::from("1"),
-            registered_at: Utc::now().timestamp(),
-            steam: None,
-        };
-        let p1_id = Participant::insert(&conn, &p1).unwrap();
-
-        let p2 = Participant {
-            guild_id: String::from("8675309"),
-            user_id: String::from("2"),
-            registered_at: Utc::now().timestamp(),
-            steam: None,
-        };
-        let p2_id = Participant::insert(&conn, &p2).unwrap();
+        let p1_id = add_participant(&conn, "1");
+        let p2_id = add_participant(&conn, "2");
 
         Assignment::insert(
             &conn,
@@ -1088,5 +1124,38 @@ mod tests {
             registration_state(&conn, "8675309").unwrap(),
             RegistrationState::AlreadyDrawn
         );
+    }
+
+    #[test]
+    fn no_assignments_before_draw() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        assert!(!has_assignments(&conn, "8675309").unwrap());
+    }
+
+    #[test]
+    fn assignments_after_draw() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+
+        let p1_id = add_participant(&conn, "1");
+        let p2_id = add_participant(&conn, "2");
+
+        Assignment::insert(
+            &conn,
+            &Assignment {
+                participant_id: p1_id,
+                giftee_id: p2_id,
+            },
+        )
+        .unwrap();
+
+        assert!(has_assignments(&conn, "8675309").unwrap());
     }
 }

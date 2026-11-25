@@ -1,7 +1,8 @@
 use crate::{Context, Error};
 
 use chrono::{prelude::*, Duration};
-use poise::serenity_prelude::{self as serenity, CreateScheduledEvent, UserId};
+use poise::serenity_prelude::UserId;
+use poise::serenity_prelude::{self as serenity, CreateScheduledEvent};
 use regex::Regex;
 use rusqlite::{self, OptionalExtension};
 use std::fmt::Write;
@@ -36,6 +37,15 @@ struct Guild {
     gifting_time: Option<i64>,
     drawing_event_id: Option<u64>,
     gifting_event_id: Option<u64>,
+}
+
+// Used to determine whether Secret Santa registrations can change in a server
+#[derive(Debug, PartialEq, Eq)]
+enum RegistrationState {
+    NoEvent,
+    Open,
+    AlreadyDrawn,
+    PastDeadline,
 }
 
 impl Participant {
@@ -494,13 +504,47 @@ async fn move_event(
     Ok(())
 }
 
+fn registration_state(
+    db: &rusqlite::Connection,
+    guild_id: &str,
+) -> rusqlite::Result<RegistrationState> {
+    // Check if an event exists
+    let Some(guild) = Guild::get(db, guild_id)? else {
+        return Ok(RegistrationState::NoEvent);
+    };
+
+    // Check if the drawing has already happened
+    let query = r"
+        SELECT EXISTS(
+            SELECT 1
+            FROM santa_assignments AS a
+            JOIN santa_participants AS p
+                ON a.participant_id = p.id
+            WHERE p.guild_id = ?1
+        )
+    ";
+    let drawn: bool = db.query_row(query, [guild_id], |row| row.get(0))?;
+    if drawn {
+        return Ok(RegistrationState::AlreadyDrawn);
+    }
+
+    // Check if the deadline is passed, but the drawing hasn't happened yet
+    if guild
+        .drawing_time
+        .is_some_and(|ts| ts <= Utc::now().timestamp())
+    {
+        return Ok(RegistrationState::PastDeadline);
+    }
+
+    // None of the above are true, registration is open
+    Ok(RegistrationState::Open)
+}
+
 /// Prints info about the current guild's Secret Santa event
 #[poise::command(slash_command)]
 pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
-    let guild_id = ctx
-        .guild_id()
-        .ok_or("Command must be used in a server")?
-        .to_string();
+    let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
+    let guild_id = discord_guild.to_string();
 
     let db = ctx.data().db.clone();
     let db = db.lock().await;
@@ -659,6 +703,40 @@ pub async fn santa_register(
     let db = ctx.data().db.clone();
     let db = db.lock().await;
 
+    // Check if registration is open
+    match registration_state(&db, &guild_id)? {
+        RegistrationState::Open => {}
+        RegistrationState::NoEvent => {
+            info!(
+                guild_id,
+                user_id, "User tried to register for Secret Santa, but no guild event exists"
+            );
+            ctx.say(
+                "No Secret Santa event exists in this server. Ask an admin to run `/santa_create`.",
+            )
+            .await?;
+            return Ok(());
+        }
+        RegistrationState::AlreadyDrawn => {
+            info!(
+                guild_id,
+                user_id, "User tried to register for Secret Santa, but guild has already drawn"
+            );
+            ctx.say("Sorry, your server has already drawn Secret Santas this year. Contact a server admin if you think this is a mistake.")
+                .await?;
+            return Ok(());
+        }
+        RegistrationState::PastDeadline => {
+            info!(
+                guild_id,
+                user_id, "User tried to register for Secret Santa, but guild registration deadline has already passed"
+            );
+            ctx.say("Sorry, your server's Secret Santa registration deadline has passed. Contact a server admin if you think this is a mistake.")
+                .await?;
+            return Ok(());
+        }
+    }
+
     // Check if user already registered
     if Participant::get(&db, &guild_id, &user_id)?.is_some() {
         ctx.say("You are already registered for Secret Santa in this server!")
@@ -749,6 +827,38 @@ pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
     let db = ctx.data().db.clone();
     let db = db.lock().await;
 
+    // Check if registration is open (users can't unregister after registration closes)
+    match registration_state(&db, &guild_id)? {
+        RegistrationState::Open => {}
+        RegistrationState::NoEvent => {
+            info!(
+                guild_id,
+                user_id, "User tried to unregister from Secret Santa, but no guild event exists"
+            );
+            ctx.say("No Secret Santa event exists in this server, so there's nothing to leave.")
+                .await?;
+            return Ok(());
+        }
+        RegistrationState::AlreadyDrawn => {
+            info!(
+                guild_id,
+                user_id, "User tried to unregister from Secret Santa, but guild has already drawn"
+            );
+            ctx.say("Sorry, your server has already drawn Secret Santas this year. Contact a server admin if you need to withdraw from the event.")
+                .await?;
+            return Ok(());
+        }
+        RegistrationState::PastDeadline => {
+            info!(
+                guild_id,
+                user_id, "User tried to unregister from Secret Santa, but guild registration deadline has already passed"
+            );
+            ctx.say("Sorry, your server's Secret Santa registration deadline has passed. Contact a server admin if you need to withdraw from the event.")
+                .await?;
+            return Ok(());
+        }
+    }
+
     let deleted = db.execute(
         "DELETE FROM santa_participants WHERE guild_id = ?1 AND user_id = ?2",
         [&guild_id, &user_id],
@@ -757,14 +867,14 @@ pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
     if deleted == 0 {
         ctx.say("You were not registered for Secret Santa.").await?;
         info!(
-            "User {} tried to unregister for Secret Santa in guild {}, but was not registered",
+            "User {} tried to unregister from Secret Santa in guild {}, but was not registered",
             user_id, guild_id
         );
     } else {
         ctx.say("You have been unregistered from Secret Santa.")
             .await?;
         info!(
-            "User {} unregistered for Secret Santa in guild {}",
+            "User {} unregistered from Secret Santa in guild {}",
             user_id, guild_id
         );
     }
@@ -885,4 +995,98 @@ pub async fn santa_shuffle(ctx: Context<'_>) -> Result<(), Error> {
 
     info!("Secret Santa shuffle completed for guild {}", guild_id);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db;
+
+    use super::*;
+
+    fn setup() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+
+        db::migrate(&mut conn).unwrap();
+
+        conn
+    }
+
+    #[test]
+    fn guild_event_missing() {
+        let conn = setup();
+
+        assert_eq!(
+            registration_state(&conn, "8675309").unwrap(),
+            RegistrationState::NoEvent
+        );
+    }
+
+    #[test]
+    fn guild_event_open() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+
+        assert_eq!(
+            registration_state(&conn, "8675309").unwrap(),
+            RegistrationState::Open
+        );
+    }
+
+    #[test]
+    fn guild_event_deadline_passed() {
+        let conn = setup();
+
+        Guild::create(
+            &conn,
+            "8675309",
+            Some(Utc::now().timestamp() - 60),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            registration_state(&conn, "8675309").unwrap(),
+            RegistrationState::PastDeadline
+        );
+    }
+
+    #[test]
+    fn guild_event_drawn() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+
+        let p1 = Participant {
+            guild_id: String::from("8675309"),
+            user_id: String::from("1"),
+            registered_at: Utc::now().timestamp(),
+            steam: None,
+        };
+        let p1_id = Participant::insert(&conn, &p1).unwrap();
+
+        let p2 = Participant {
+            guild_id: String::from("8675309"),
+            user_id: String::from("2"),
+            registered_at: Utc::now().timestamp(),
+            steam: None,
+        };
+        let p2_id = Participant::insert(&conn, &p2).unwrap();
+
+        Assignment::insert(
+            &conn,
+            &Assignment {
+                participant_id: p1_id,
+                giftee_id: p2_id,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            registration_state(&conn, "8675309").unwrap(),
+            RegistrationState::AlreadyDrawn
+        );
+    }
 }

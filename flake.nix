@@ -171,7 +171,7 @@
               pkgs.cargo-deny
               pkgs.cargo-llvm-cov
               pkgs.cargo-nextest
-              pkgs.sqlite
+              pkgs.sqlite-interactive
               pkgs.prek
             ]
             ++ config.pre-commit.settings.enabledPackages;

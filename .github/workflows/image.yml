@@ -74,12 +74,12 @@ jobs:
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
 
   deploy:
-    name: Deploy to ${{ github.event_name == 'release' && 'production' || 'preview' }}
+    name: Deploy to ${{ github.event_name == 'release' && 'Production' || 'Preview' }}
     needs: image
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'release' && 'production' || 'preview' }}
+    environment: ${{ github.event_name == 'release' && 'Production' || 'Preview' }}
     concurrency:
-      group: deploy-${{ github.event_name == 'release' && 'production' || 'preview' }}
+      group: deploy-${{ github.event_name == 'release' && 'Production' || 'Preview' }}
       cancel-in-progress: false
     permissions: {}
     steps:

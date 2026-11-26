@@ -39,6 +39,14 @@ struct Guild {
     gifting_event_id: Option<u64>,
 }
 
+/// One Santa's assignment, ready to send as a DM.
+#[derive(Debug)]
+struct AssignmentDm {
+    giver_id: u64,
+    giftee_id: u64,
+    giftee_steam: String,
+}
+
 // Used to determine whether Secret Santa registrations can change in a server
 #[derive(Debug, PartialEq, Eq)]
 enum RegistrationState {
@@ -130,12 +138,13 @@ impl Guild {
         gift_at: Option<i64>,
         draw_event_id: Option<u64>,
         gift_event_id: Option<u64>,
+        announce_channel_id: Option<u64>,
     ) -> rusqlite::Result<i64> {
         let now = chrono::Utc::now().timestamp();
         db.execute(
-            "INSERT INTO santa_guilds (guild_id, draw_at, gift_at, created_at, drawing_event_id, gifting_event_id)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            (guild_id, draw_at, gift_at, now, draw_event_id, gift_event_id),
+            "INSERT INTO santa_guilds (guild_id, draw_at, gift_at, created_at, drawing_event_id, gifting_event_id, announce_channel_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            (guild_id, draw_at, gift_at, now, draw_event_id, gift_event_id, announce_channel_id),
         )?;
         Ok(db.last_insert_rowid())
     }
@@ -229,7 +238,16 @@ pub async fn santa_create(
     }
 
     // Create guild in Santa database
-    let _id = Guild::create(&db, &guild_id, draw_at, gift_at, None, None).map_err(|e| {
+    let _id = Guild::create(
+        &db,
+        &guild_id,
+        draw_at,
+        gift_at,
+        None,
+        None,
+        Some(ctx.channel_id().get()),
+    )
+    .map_err(|e| {
         error!(?e, %guild_id, "Failed to create Secret Santa");
         e
     })?;
@@ -315,6 +333,10 @@ pub async fn santa_create(
 }
 
 /// Sets the drawing and/or gifting time for the Secret Santa.
+#[expect(
+    clippy::too_many_lines,
+    reason = "This will be split up during the v0.13 module refactor"
+)]
 #[poise::command(
     slash_command,
     default_member_permissions = "MANAGE_EVENTS",
@@ -406,12 +428,19 @@ pub async fn santa_set_time(
         }
     }
 
-    // Write updated times to DB
+    // Write updated times to DB, and re-arm the automatic draw if the draw time changed
     db.execute(
         "UPDATE santa_guilds
-         SET draw_at = ?1, gift_at = ?2
+         SET draw_at = ?1,
+             gift_at = ?2,
+             auto_draw_attempted_at = CASE WHEN ?4 THEN NULL ELSE auto_draw_attempted_at END
          WHERE id = ?3",
-        (&guild.drawing_time, &guild.gifting_time, &guild.id),
+        (
+            &guild.drawing_time,
+            &guild.gifting_time,
+            &guild.id,
+            draw_at.is_some(),
+        ),
     )?;
 
     let draw_display = guild.drawing_time.map_or_else(
@@ -871,9 +900,6 @@ pub async fn santa_shuffle(
     ctx: Context<'_>,
     #[description = "Replace existing assignments and DM everyone again"] force: Option<bool>,
 ) -> Result<(), Error> {
-    use rand::seq::SliceRandom;
-    use rand::thread_rng;
-
     let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
     let guild_id = discord_guild.to_string();
 
@@ -910,53 +936,9 @@ pub async fn santa_shuffle(
 
     // Get participants, shuffle, and assign giftees
     let guild_id_clone = guild_id.clone();
-    let (dm_info, replaced): (Vec<(u64, u64, String)>, usize) = tokio::task::spawn_blocking(move || -> Result<_, rusqlite::Error> {
-        let db = db.blocking_lock();
-
-        // Get participants
-        let mut stmt = db.prepare("SELECT id, user_id FROM santa_participants WHERE guild_id = ?1")?;
-        let participants: Vec<(i64, String)> = stmt.query_map([&guild_id_clone], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-
-        if participants.len() < 2 {
-            return Ok((vec![], 0));
-        }
-
-        // Shuffle
-        let mut shuffled = participants;
-        shuffled.shuffle(&mut thread_rng());
-
-        // Clear old assignments
-        let replaced = db.execute(
-            "DELETE FROM santa_assignments WHERE participant_id IN (SELECT id FROM santa_participants WHERE guild_id = ?1)",
-            [&guild_id_clone],
-        )?;
-
-        // Assign in a loop, collect DM info
-        let mut dm_info = Vec::new();
-        for i in 0..shuffled.len() {
-            let giver = &shuffled[i];
-            let giftee = &shuffled[(i + 1) % shuffled.len()];
-
-            // Insert into DB
-            Assignment::insert(&db, &Assignment {
-                participant_id: giver.0,
-                giftee_id: giftee.0,
-            })?;
-
-            // Fetch giftee Steam
-            let mut stmt2 = db.prepare("SELECT steam FROM santa_participants WHERE id = ?1")?;
-            let giftee_steam: String = stmt2.query_row([giftee.0], |r| r.get::<_, Option<String>>(0))?
-                .unwrap_or_else(|| "No Steam URL".to_string());
-
-            dm_info.push((
-                giver.1.parse::<u64>().unwrap_or(0),   // Gifter Discord ID
-                giftee.1.parse::<u64>().unwrap_or(0),  // Giftee Discord ID
-                giftee_steam,
-            ));
-        }
-
-        Ok((dm_info, replaced))
+    let (dm_info, replaced) = tokio::task::spawn_blocking(move || {
+        let mut db = db.blocking_lock();
+        draw_assignments(&mut db, &guild_id_clone)
     })
     .await??;
 
@@ -1002,6 +984,74 @@ pub async fn santa_shuffle(
     Ok(())
 }
 
+/// Draws Secret Santa pairs for a guild, replacing any existing ones.
+/// Returns the DM info for each pair and how many old pairs were replaced.
+fn draw_assignments(
+    db: &mut rusqlite::Connection,
+    guild_id: &str,
+) -> rusqlite::Result<(Vec<AssignmentDm>, usize)> {
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
+
+    // Get participants
+    let participants: Vec<(i64, String)> = {
+        let mut stmt =
+            db.prepare("SELECT id, user_id FROM santa_participants WHERE guild_id = ?1")?;
+        let rows = stmt
+            .query_map([&guild_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
+    };
+
+    if participants.len() < 2 {
+        return Ok((vec![], 0));
+    }
+
+    let tx = db.transaction()?;
+
+    // Shuffle
+    let mut shuffled = participants;
+    shuffled.shuffle(&mut thread_rng());
+
+    // Clear old assignments
+    let replaced = tx.execute(
+            "DELETE FROM santa_assignments WHERE participant_id IN (SELECT id FROM santa_participants WHERE guild_id = ?1)",
+            [&guild_id],
+        )?;
+
+    // Assign in a loop, collect DM info
+    let mut dm_info = Vec::new();
+    for i in 0..shuffled.len() {
+        let giver = &shuffled[i];
+        let giftee = &shuffled[(i + 1) % shuffled.len()];
+
+        // Insert into DB
+        Assignment::insert(
+            &tx,
+            &Assignment {
+                participant_id: giver.0,
+                giftee_id: giftee.0,
+            },
+        )?;
+
+        // Fetch giftee Steam
+        let mut stmt2 = tx.prepare("SELECT steam FROM santa_participants WHERE id = ?1")?;
+        let giftee_steam: String = stmt2
+            .query_row([giftee.0], |r| r.get::<_, Option<String>>(0))?
+            .unwrap_or_else(|| "No Steam URL".to_string());
+
+        dm_info.push(AssignmentDm {
+            giver_id: giver.1.parse().unwrap_or(0),
+            giftee_id: giftee.1.parse().unwrap_or(0),
+            giftee_steam,
+        });
+    }
+
+    tx.commit()?;
+
+    Ok((dm_info, replaced))
+}
+
 /// Sends each Santa their assignment by DM.
 /// Returns a Vec of UIDs for users who the bot failed to DM.
 async fn send_assignment_dms(
@@ -1009,17 +1059,22 @@ async fn send_assignment_dms(
     guild_id: &str,
     guild_name: &str,
     intro: &str,
-    dm_info: Vec<(u64, u64, String)>,
+    dm_info: Vec<AssignmentDm>,
 ) -> Vec<u64> {
     let mut failed = Vec::new();
-    for (giver_id, giftee_discord_id, giftee_steam) in dm_info {
+    for AssignmentDm {
+        giver_id,
+        giftee_id,
+        giftee_steam,
+    } in dm_info
+    {
         let user_id = UserId::new(giver_id);
         match user_id.to_user(http).await {
             Ok(user) => {
                 let wishlist = format!("{giftee_steam}/wishlist");
                 let dm_message = serenity::CreateMessage::default()
                     .content(format!(
-                        "🎅 {intro} <@{giftee_discord_id}>. Check out their [Steam wishlist]({wishlist}) and run `/santa_info` in {guild_name} to check when your gift should be scheduled to arrive!"
+                        "🎅 {intro} <@{giftee_id}>. Check out their [Steam wishlist]({wishlist}) and run `/santa_info` in {guild_name} to check when your gift should be scheduled to arrive!"
                     ));
 
                 if let Err(e) = user.dm(http, dm_message).await {
@@ -1102,7 +1157,7 @@ mod tests {
     fn guild_event_open() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
 
         assert_eq!(
             registration_state(&conn, "8675309").unwrap(),
@@ -1121,6 +1176,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -1134,7 +1190,7 @@ mod tests {
     fn guild_event_drawn() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
 
         let p1_id = add_participant(&conn, "1");
         let p2_id = add_participant(&conn, "2");
@@ -1158,7 +1214,7 @@ mod tests {
     fn no_assignments_before_draw() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
 
         add_participant(&conn, "1");
         add_participant(&conn, "2");
@@ -1170,7 +1226,7 @@ mod tests {
     fn assignments_after_draw() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None).unwrap();
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
 
         let p1_id = add_participant(&conn, "1");
         let p2_id = add_participant(&conn, "2");
@@ -1201,5 +1257,60 @@ mod tests {
         let report = failed_dm_report(&failed).unwrap();
         assert!(report.contains("<@1>"));
         assert!(report.contains("<@2>"));
+    }
+
+    #[test]
+    fn draw_pairs_everyone_once() {
+        let mut conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+        add_participant(&conn, "3");
+
+        let (dms, replaced) = draw_assignments(&mut conn, "8675309").unwrap();
+
+        assert_eq!(dms.len(), 3);
+        assert_eq!(replaced, 0);
+
+        // Nobody drew themselves
+        assert!(dms.iter().all(|d| d.giver_id != d.giftee_id));
+
+        // Everyone gives exactly once and receives exactly once
+        let mut givers: Vec<u64> = dms.iter().map(|d| d.giver_id).collect();
+        let mut giftees: Vec<u64> = dms.iter().map(|d| d.giftee_id).collect();
+        givers.sort_unstable();
+        giftees.sort_unstable();
+        assert_eq!(givers, [1, 2, 3]);
+        assert_eq!(giftees, [1, 2, 3]);
+    }
+
+    #[test]
+    fn draw_needs_two_participants() {
+        let mut conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        add_participant(&conn, "1");
+
+        let (dms, replaced) = draw_assignments(&mut conn, "8675309").unwrap();
+
+        assert!(dms.is_empty());
+        assert_eq!(replaced, 0);
+    }
+
+    #[test]
+    fn draw_replaces_existing() {
+        let mut conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+        add_participant(&conn, "3");
+
+        draw_assignments(&mut conn, "8675309").unwrap();
+        let (dms, replaced) = draw_assignments(&mut conn, "8675309").unwrap();
+
+        assert_eq!(dms.len(), 3);
+        assert_eq!(replaced, 3);
     }
 }

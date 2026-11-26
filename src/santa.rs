@@ -982,7 +982,7 @@ pub async fn santa_shuffle(
     };
 
     // Send DMs
-    send_assignment_dms(
+    let failed = send_assignment_dms(
         &ctx.serenity_context().http,
         &guild_id,
         &guild_name,
@@ -991,18 +991,27 @@ pub async fn santa_shuffle(
     )
     .await;
 
+    if let Some(report) = failed_dm_report(&failed) {
+        let r = poise::CreateReply::default()
+            .content(report)
+            .ephemeral(true);
+        ctx.send(r).await?;
+    }
+
     info!(%guild_id, "Secret Santa shuffle completed");
     Ok(())
 }
 
 /// Sends each Santa their assignment by DM.
+/// Returns a Vec of UIDs for users who the bot failed to DM.
 async fn send_assignment_dms(
     http: &serenity::Http,
     guild_id: &str,
     guild_name: &str,
     intro: &str,
     dm_info: Vec<(u64, u64, String)>,
-) {
+) -> Vec<u64> {
+    let mut failed = Vec::new();
     for (giver_id, giftee_discord_id, giftee_steam) in dm_info {
         let user_id = UserId::new(giver_id);
         match user_id.to_user(http).await {
@@ -1020,6 +1029,7 @@ async fn send_assignment_dms(
                         user_id = giver_id,
                         "Failed to DM participant their Secret Santa assignment"
                     );
+                    failed.push(giver_id);
                 } else {
                     debug!(%guild_id, user_id = giver_id, "Sent Secret Santa assignment DM");
                 }
@@ -1031,9 +1041,27 @@ async fn send_assignment_dms(
                     user_id = giver_id,
                     "Failed to fetch user for Secret Santa DM"
                 );
+                failed.push(giver_id);
             }
         }
     }
+
+    failed
+}
+
+/// Takes the `failed` Vec from `send_assignment_dms` and builds a string listing all of them.
+fn failed_dm_report(failed: &[u64]) -> Option<String> {
+    if failed.is_empty() {
+        return None;
+    }
+
+    let failed_list = failed
+        .iter()
+        .map(|id| format!("<@{id}>"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Some(format!("Failed to DM the following users: {failed_list}. Please ask them to ensure they have DMs enabled from server members."))
 }
 
 #[cfg(test)]
@@ -1157,5 +1185,21 @@ mod tests {
         .unwrap();
 
         assert!(has_assignments(&conn, "8675309").unwrap());
+    }
+
+    #[test]
+    fn dm_report_empty_returns_none() {
+        let failed: Vec<u64> = Vec::new();
+
+        assert!(failed_dm_report(&failed).is_none());
+    }
+
+    #[test]
+    fn dm_report_contains_ids() {
+        let failed = [1, 2];
+
+        let report = failed_dm_report(&failed).unwrap();
+        assert!(report.contains("<@1>"));
+        assert!(report.contains("<@2>"));
     }
 }

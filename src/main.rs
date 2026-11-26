@@ -9,7 +9,7 @@ use poise::serenity_prelude::{self as serenity, ActivityData};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use regex::Regex;
 use rusqlite::Connection;
-use std::{env, fs::create_dir, sync::Arc};
+use std::{env, fs::create_dir_all, sync::Arc};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -32,13 +32,11 @@ pub struct BotData {
     pub db: Arc<Mutex<Connection>>,
 }
 
-#[tokio::main]
-async fn main() {
+/// Sets up stdout and rolling JSON file logging.
+/// The returned guard must stay alive for file logs to be written.
+fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     // Create logs directory
-    match create_dir("logs") {
-        Ok(()) => (),
-        Err(e) => error!("Failed to create logs directory: {e}"),
-    }
+    create_dir_all("logs").expect("Failed to create logging directory!");
 
     // Set up logging
     let file_appender = RollingFileAppender::builder()
@@ -47,7 +45,7 @@ async fn main() {
         .filename_suffix("log")
         .build("logs/")
         .expect("Failed to create logfile appender!");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
     let stdout_logger = tracing_subscriber::fmt::layer()
         .compact()
         .with_filter(LevelFilter::INFO);
@@ -59,6 +57,14 @@ async fn main() {
         .with(stdout_logger)
         .with(file_logger)
         .init();
+
+    guard
+}
+
+#[tokio::main]
+async fn main() {
+    // Keep the non-blocking background logging thread alive until `main` returns
+    let _guard = init_logging();
 
     // Say hi :)
     info!("Hello, ProtoBot here!");
@@ -84,6 +90,9 @@ async fn main() {
     let data = BotData {
         db: Arc::new(Mutex::new(db)),
     };
+
+    // Database clone for Secret Santa drawings
+    let draw_db = data.db.clone();
 
     info!("Database ready");
 
@@ -137,7 +146,12 @@ async fn main() {
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
+                // Register bot commands
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+
+                // Start timer for Secret Santa drawings
+                tokio::spawn(santa::auto_draw_loop(ctx.http.clone(), draw_db));
+
                 Ok(data)
             })
         })

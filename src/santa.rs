@@ -6,9 +6,11 @@ use poise::serenity_prelude::{self as serenity, CreateScheduledEvent};
 use regex::Regex;
 use rusqlite::{self, OptionalExtension};
 use std::fmt::Write;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
-// Represents a Secret Santa participant (SQLite table santa_participants)
+/// Represents a Secret Santa participant (SQLite table `santa_participants`)
 #[derive(Debug)]
 struct Participant {
     guild_id: String,
@@ -17,14 +19,14 @@ struct Participant {
     steam: Option<String>,
 }
 
-// Represents a Secret Santa assignment (SQLite table santa_assignments)
+/// Represents a Secret Santa assignment (SQLite table `santa_assignments`)
 #[derive(Debug)]
 struct Assignment {
     participant_id: i64,
     giftee_id: i64,
 }
 
-// Represents a Secret Santa guild (SQLite table santa_guilds)
+/// Represents a Secret Santa guild (SQLite table `santa_guilds`)
 #[derive(Debug)]
 #[expect(
     clippy::struct_field_names,
@@ -39,7 +41,7 @@ struct Guild {
     gifting_event_id: Option<u64>,
 }
 
-/// One Santa's assignment, ready to send as a DM.
+/// One Santa's assignment, ready to send as a DM
 #[derive(Debug)]
 struct AssignmentDm {
     giver_id: u64,
@@ -47,7 +49,14 @@ struct AssignmentDm {
     giftee_steam: String,
 }
 
-// Used to determine whether Secret Santa registrations can change in a server
+/// A guild whose automatic Secret Santa draw is due
+#[derive(Debug, PartialEq, Eq)]
+struct DueDraw {
+    guild_id: String,
+    channel_id: Option<u64>,
+}
+
+/// Used to determine whether Secret Santa registrations can change in a server
 #[derive(Debug, PartialEq, Eq)]
 enum RegistrationState {
     NoEvent,
@@ -1119,6 +1128,155 @@ fn failed_dm_report(failed: &[u64]) -> Option<String> {
     Some(format!("Failed to DM the following users: {failed_list}. Please ask them to ensure they have DMs enabled from server members."))
 }
 
+/// Returns a Vec of `DueDraws` representing all Guilds who have a Santa Drawing set to happen at or
+/// before `now`.
+fn due_draws(db: &rusqlite::Connection, now: i64) -> rusqlite::Result<Vec<DueDraw>> {
+    let mut stmt = db.prepare(
+        r"
+        SELECT g.guild_id, g.announce_channel_id
+        FROM santa_guilds AS g
+        WHERE g.draw_at IS NOT NULL
+            AND g.draw_at <= ?1
+            AND g.auto_draw_attempted_at IS NULL
+            AND NOT EXISTS(
+                SELECT 1
+                FROM santa_assignments AS a
+                JOIN santa_participants AS p
+                    ON a.participant_id = p.id
+                WHERE p.guild_id = g.guild_id
+            )
+        ",
+    )?;
+    let due = stmt
+        .query_map([now], |row| {
+            Ok(DueDraw {
+                guild_id: row.get(0)?,
+                channel_id: row.get(1)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(due)
+}
+
+/// Marks a guild's automatic draw as attempted, then draws its pairs.
+fn start_auto_draw(
+    db: &mut rusqlite::Connection,
+    guild_id: &str,
+    now: i64,
+) -> rusqlite::Result<Vec<AssignmentDm>> {
+    db.execute(
+        "UPDATE santa_guilds
+            SET auto_draw_attempted_at = ?1
+        WHERE guild_id = ?2",
+        (now, guild_id),
+    )?;
+
+    let (dms, _) = draw_assignments(db, guild_id)?;
+
+    Ok(dms)
+}
+
+/// Posts a message to a guild's Secret Santa announcement channel if it has one.
+async fn announce(http: &serenity::Http, guild_id: &str, channel_id: Option<u64>, text: &str) {
+    let Some(channel_id) = channel_id else {
+        warn!(
+            guild_id,
+            "Tried to send a Secret Santa announcement in a guild that has no `channel_id`"
+        );
+        return;
+    };
+    if let Err(e) = serenity::ChannelId::new(channel_id).say(http, text).await {
+        warn!(
+            ?e,
+            guild_id, channel_id, "Could not send Secret Santa announcement"
+        );
+    }
+}
+
+/// Runs one guild's automatic Secret Santa draw and announces the result.
+async fn run_auto_draw(http: &serenity::Http, db: &Mutex<rusqlite::Connection>, due: DueDraw) {
+    let DueDraw {
+        guild_id,
+        channel_id,
+    } = due;
+
+    let result = {
+        let mut db = db.lock().await;
+        start_auto_draw(&mut db, &guild_id, Utc::now().timestamp())
+    };
+    // Lock released here, before any network calls
+
+    let dms = match result {
+        Ok(dms) => dms,
+        Err(e) => {
+            error!(?e, guild_id, "Automatic Secret Santa draw failed");
+            return;
+        }
+    };
+
+    if dms.is_empty() {
+        announce(http, &guild_id, channel_id, "There were not enough participants to draw Secret Santas. After more people register, an admin can run `/santa_shuffle` to try again.").await;
+        return;
+    }
+
+    let guild_name = match guild_id.parse::<u64>() {
+        Ok(id) => http
+            .get_guild(serenity::GuildId::new(id))
+            .await
+            .map_or_else(|_| "this server".into(), |g| g.name),
+        Err(e) => {
+            error!(?e, %guild_id, "Stored guild ID is not a valid number");
+            "this server".to_string()
+        }
+    };
+
+    let failed = send_assignment_dms(
+        http,
+        &guild_id,
+        &guild_name,
+        &format!("It's Secret Santa time in {guild_name}! Your assigned giftee is"),
+        dms,
+    )
+    .await;
+
+    let intro =
+        "🎅 Secret Santas have been drawn! Check your DMs to see whose Santa you get to be!";
+
+    let text = failed_dm_report(&failed)
+        .map_or_else(|| intro.into(), |report| format!("{intro}\n{report}"));
+
+    announce(http, &guild_id, channel_id, &text).await;
+}
+
+/// Checks for due Secret Santa draws once a minute and runs them.
+pub async fn auto_draw_loop(http: Arc<serenity::Http>, db: Arc<Mutex<rusqlite::Connection>>) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+
+    // If a tick takes too long, wait before the next one instead of firing back-to-back
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+
+        let due = {
+            let db = db.lock().await;
+            due_draws(&db, Utc::now().timestamp())
+        };
+
+        match due {
+            Err(e) => {
+                error!(?e, "Failed to check for due Secret Santa drawings");
+            }
+            Ok(due) => {
+                for draw in due {
+                    run_auto_draw(&http, &db, draw).await;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::db;
@@ -1312,5 +1470,125 @@ mod tests {
 
         assert_eq!(dms.len(), 3);
         assert_eq!(replaced, 3);
+    }
+
+    #[test]
+    fn draw_date_due_guild_returned() {
+        let conn = setup();
+
+        let draw_at = Some(Utc::now().timestamp() - 600);
+
+        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+
+        let expected = [DueDraw {
+            guild_id: "8675309".to_string(),
+            channel_id: None,
+        }];
+
+        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+    }
+
+    #[test]
+    fn draw_date_future_guild_not_returned() {
+        let conn = setup();
+
+        let draw_at = Some(Utc::now().timestamp() + 600);
+
+        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+
+        let expected: Vec<DueDraw> = Vec::new();
+
+        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+    }
+
+    #[test]
+    fn draw_date_none_guild_not_returned() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+
+        let expected: Vec<DueDraw> = Vec::new();
+
+        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+    }
+
+    #[test]
+    fn already_drawn_guild_not_returned() {
+        let mut conn = setup();
+
+        let draw_at = Some(Utc::now().timestamp() - 600);
+
+        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        draw_assignments(&mut conn, "8675309").unwrap();
+
+        let expected: Vec<DueDraw> = Vec::new();
+
+        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+    }
+
+    #[test]
+    fn already_attempted_draw_guild_not_returned() {
+        let conn = setup();
+
+        let draw_at = Some(Utc::now().timestamp() - 600);
+
+        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+
+        conn.execute(
+            "UPDATE santa_guilds
+                SET auto_draw_attempted_at = ?1
+            WHERE guild_id = ?2",
+            (Utc::now().timestamp() - 300, "8675309"),
+        )
+        .unwrap();
+
+        let expected: Vec<DueDraw> = Vec::new();
+
+        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+    }
+
+    #[test]
+    fn auto_draw_works_once() {
+        let mut conn = setup();
+
+        let draw_at = Some(Utc::now().timestamp() - 600);
+
+        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        let dms = start_auto_draw(&mut conn, "8675309", Utc::now().timestamp()).unwrap();
+
+        assert_eq!(dms.len(), 2);
+
+        let expected: Vec<DueDraw> = Vec::new();
+
+        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+    }
+
+    #[test]
+    fn auto_draw_quits_one_participant() {
+        let mut conn = setup();
+
+        let draw_at = Some(Utc::now().timestamp() - 600);
+
+        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+
+        add_participant(&conn, "1");
+
+        let dms = start_auto_draw(&mut conn, "8675309", Utc::now().timestamp()).unwrap();
+
+        // No DMs should be sent when there is only one participant
+        assert!(dms.is_empty());
+
+        let expected: Vec<DueDraw> = Vec::new();
+
+        // The `auto_draw_attempted_at` field is still set on failure
+        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
     }
 }

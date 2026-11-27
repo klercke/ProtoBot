@@ -152,7 +152,7 @@ async fn main() {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
                 // Start timer for Secret Santa drawings
-                tokio::spawn(santa::auto_draw_loop(ctx.http.clone(), draw_db));
+                tokio::spawn(santa::santa_scheduler(ctx.http.clone(), draw_db));
 
                 Ok(data)
             })

@@ -10,6 +10,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
+// Note: this file is sort of a mess.
+// It will be cleaned up in #68 and #141
+
+/// Longest budget text allowed, in characters.
+const MAX_BUDGET_LEN: usize = 50;
+
 /// Represents a Secret Santa participant (SQLite table `santa_participants`)
 #[derive(Debug)]
 struct Participant {
@@ -39,6 +45,8 @@ struct Guild {
     gifting_time: Option<i64>,
     drawing_event_id: Option<u64>,
     gifting_event_id: Option<u64>,
+    budget: Option<String>,
+    rules_url: Option<String>,
 }
 
 /// One Santa's assignment, ready to send as a DM
@@ -124,7 +132,7 @@ impl Assignment {
 impl Guild {
     fn get(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Option<Self>> {
         let mut stmt = db.prepare(
-            r"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id
+            r"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id, budget, rules_url
             FROM santa_guilds
             WHERE guild_id = ?1",
         )?;
@@ -137,6 +145,8 @@ impl Guild {
                 gifting_time: row.get(3)?,
                 drawing_event_id: row.get(4)?,
                 gifting_event_id: row.get(5)?,
+                budget: row.get(6)?,
+                rules_url: row.get(7)?,
             })
         });
 
@@ -192,6 +202,26 @@ impl Guild {
         )?;
         Ok(db.last_insert_rowid())
     }
+
+    /// Sets the budget and/or rules link for a server.
+    /// A `None` value leaves that field unchanged.
+    fn set_details(
+        db: &rusqlite::Connection,
+        guild_id: &str,
+        budget: Option<&str>,
+        rules_url: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        db.execute(
+            r"
+            UPDATE santa_guilds
+            SET budget = COALESCE(?2, budget),
+                rules_url = COALESCE(?3, rules_url)
+            WHERE guild_id = ?1",
+            (guild_id, budget, rules_url),
+        )?;
+
+        Ok(())
+    }
 }
 
 /// Initialize a Secret Santa event in a server.
@@ -208,6 +238,11 @@ pub async fn santa_create(
     ctx: Context<'_>,
     #[description = "The time that you will assign Santas (Unix timestamp)"] draw_at: Option<i64>,
     #[description = "The time when gifts are to be sent (Unix timestamp)"] gift_at: Option<i64>,
+    #[description = "The maximum budget or price range for your Secret Santa event"] budget: Option<
+        String,
+    >,
+    #[description = "A link to the rules for your Secret Santa event. Tip: This can be a Discord Message Link"]
+    rules_url: Option<String>,
 ) -> Result<(), Error> {
     let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
     let guild_id = discord_guild.to_string();
@@ -218,14 +253,22 @@ pub async fn santa_create(
         "Received request to create Secret Santa"
     );
 
-    let response = "Initializing Secret Santa for this server...";
-    ctx.say(response).await?;
-
     // Show bot as typing. Ignore any errors that come from this
     let typing = ctx.channel_id().broadcast_typing(&ctx).await;
     if let Err(e) = typing {
         warn!(?e, %guild_id, "Failed to start typing indicator for Secret Santa init");
     }
+
+    // Validate details before sending messages
+    if let Err(msg) = validate_details(budget.as_deref(), rules_url.as_deref()) {
+        info!(%guild_id, user_id = %ctx.author().id, reason = %msg, "Rejected Secret Santa creation");
+        let r = poise::CreateReply::default().content(msg).ephemeral(true);
+        ctx.send(r).await?;
+        return Ok(());
+    }
+
+    let response = "Initializing Secret Santa for this server...";
+    ctx.say(response).await?;
 
     // Get a database handle and lock connection
     let db = ctx.data().db.clone();
@@ -268,6 +311,12 @@ pub async fn santa_create(
         e
     })?;
     info!(%guild_id, "Created Secret Santa database entry");
+
+    // Set `budget` and `rules_url` if provided
+    Guild::set_details(&db, &guild_id, budget.as_deref(), rules_url.as_deref())?;
+    if budget.is_some() || rules_url.is_some() {
+        info!(%guild_id, budget = budget.as_deref(), rules_url = rules_url.as_deref(), "Set Secret Santa details");
+    }
 
     // Get HTTP to create events
     let http = ctx.serenity_context().http.clone();
@@ -469,12 +518,90 @@ pub async fn santa_set_time(
     );
 
     let mut msg = format!(
-        "Secret Santa times for this guild:\n**Draw:** {draw_display}\n**Gift:** {gift_display}"
+        "Secret Santa times for this server:\n**Draw:** {draw_display}\n**Gift:** {gift_display}"
     );
     for note in notes {
         let _ = write!(msg, "\n-# {note}");
     }
     ctx.say(msg).await?;
+
+    Ok(())
+}
+
+/// Updates the details (`budget` and `rules_url`) for an event.
+#[poise::command(slash_command, default_member_permissions = "MANAGE_EVENTS")]
+pub async fn santa_set_details(
+    ctx: Context<'_>,
+    #[description = "The maximum budget or price range for your Secret Santa event"] budget: Option<
+        String,
+    >,
+    #[description = "A link to the rules for your Secret Santa event. Tip: This can be a Discord Message Link"]
+    rules_url: Option<String>,
+) -> Result<(), Error> {
+    let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
+    let guild_id = discord_guild.to_string();
+
+    info!(%guild_id, user_id = %ctx.author().id, "Requested Secret Santa details update");
+
+    let _ = ctx.channel_id().broadcast_typing(&ctx).await;
+    ctx.defer_ephemeral().await?;
+
+    if let Err(msg) = validate_details(budget.as_deref(), rules_url.as_deref()) {
+        info!(%guild_id, user_id = %ctx.author().id, reason = %msg, "Rejected Secret Santa details update");
+        let r = poise::CreateReply::default().content(msg).ephemeral(true);
+        ctx.send(r).await?;
+        return Ok(());
+    }
+
+    let db = ctx.data().db.clone();
+    let db = db.lock().await;
+
+    let Some(guild) = Guild::get(&db, &guild_id)? else {
+        info!(%guild_id, user_id = %ctx.author().id, "Tried to update Secret Santa details, but no event exists");
+        ctx.say("No Secret Santa event exists for this server! Run `/santa_create` first.")
+            .await?;
+        return Ok(());
+    };
+
+    // Set `budget` and `rules_url` if provided
+    Guild::set_details(&db, &guild_id, budget.as_deref(), rules_url.as_deref())?;
+
+    // Log the update
+    info!(
+        %guild_id,
+        user_id = %ctx.author().id,
+        budget = budget.as_deref(),
+        rules_url = rules_url.as_deref(),
+        "Updated Secret Santa details"
+    );
+
+    // Inform the user of the successful update
+    let budget_display = budget
+        .or(guild.budget)
+        .unwrap_or_else(|| "Not set".to_string());
+    let rules_url_display = rules_url
+        .or(guild.rules_url)
+        .map_or_else(|| "Not set".to_string(), |url| format!("<{url}>"));
+    let msg = format!(
+        "Updated details for this server's Secret Santa:\n**Budget:** {budget_display}\n**Rules:** {rules_url_display}"
+    );
+    ctx.say(msg).await?;
+
+    Ok(())
+}
+
+/// Checks a budget and rules link before they're saved.
+/// Returns a message for the user if either one is invalid.
+fn validate_details(budget: Option<&str>, rules_url: Option<&str>) -> Result<(), String> {
+    if budget.is_some_and(|b| b.chars().count() > MAX_BUDGET_LEN) {
+        return Err(format!(
+            "The budget can be at most {MAX_BUDGET_LEN} characters long."
+        ));
+    }
+
+    if rules_url.is_some_and(|url| !url.starts_with("https://")) {
+        return Err("The rules link must start with `https://`.".to_string());
+    }
 
     Ok(())
 }
@@ -588,25 +715,8 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
     let db = ctx.data().db.clone();
     let db = db.lock().await;
 
-    let guild: Option<Guild> = {
-        let mut stmt = db.prepare(
-            "SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id FROM santa_guilds WHERE guild_id = ?1",
-        )?;
-        stmt.query_row([&guild_id], |row| {
-            Ok(Guild {
-                id: row.get(0)?,
-                guild_id: row.get(1)?,
-                drawing_time: row.get(2)?,
-                gifting_time: row.get(3)?,
-                drawing_event_id: row.get(4)?,
-                gifting_event_id: row.get(5)?,
-            })
-        })
-        .optional()?
-    };
-
-    let Some(guild) = guild else {
-        ctx.say("No Secret Santa event exists for this guild.")
+    let Some(guild) = Guild::get(&db, &guild_id)? else {
+        ctx.say("No Secret Santa event exists for this server.")
             .await?;
         return Ok(());
     };
@@ -635,6 +745,14 @@ pub async fn santa_info(ctx: Context<'_>) -> Result<(), Error> {
         **Gift Time:** {gift_display}\n\
         **Participants:** {num_participants}"
     );
+
+    // Add budget and rules link if set
+    if let Some(budget) = &guild.budget {
+        let _ = write!(msg, "\n**Budget:** {budget}");
+    }
+    if let Some(url) = &guild.rules_url {
+        let _ = write!(msg, "\n**[Rules](<{url}>)**");
+    }
 
     // Get event links and add to message
     if let Some(id) = guild.drawing_event_id {
@@ -676,7 +794,7 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
 
     // Fetch guild row
     let Some(guild) = Guild::get(&db, &guild_id)? else {
-        ctx.say("No Secret Santa event exists for this guild.")
+        ctx.say("No Secret Santa event exists for this server.")
             .await?;
         return Ok(());
     };
@@ -1021,6 +1139,7 @@ pub async fn santa_my_giftee(ctx: Context<'_>) -> Result<(), Error> {
         (giftee, drawn)
     };
 
+    let giftee_found = giftee.is_some();
     let msg = match (giftee, drawn) {
         (Some(g), _) => {
             let wishlist = g.steam.as_deref().map_or_else(
@@ -1032,6 +1151,7 @@ pub async fn santa_my_giftee(ctx: Context<'_>) -> Result<(), Error> {
         (None, false) => "Secret Santas for this server haven't been drawn yet.".to_string(),
         (None, true) => "You weren't part of this server's Secret Santa.".to_string(),
     };
+    debug!(%guild_id, %user_id, has_giftee = giftee_found, drawn, "Answered Secret Santa giftee request");
 
     let r = poise::CreateReply::default().content(msg).ephemeral(true);
     ctx.send(r).await?;
@@ -1727,5 +1847,92 @@ mod tests {
             wishlist_url("steamcommunity.com/id/fakename"),
             "steamcommunity.com/id/fakename/wishlist"
         );
+    }
+
+    #[test]
+    fn set_details_stores_values() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+
+        Guild::set_details(
+            &conn,
+            "8675309",
+            Some("1 billion dollars"),
+            Some("https://github.com/klercke/protobot"),
+        )
+        .unwrap();
+
+        let g = Guild::get(&conn, "8675309").unwrap().unwrap();
+
+        assert_eq!(g.budget, Some("1 billion dollars".to_string()));
+        assert_eq!(
+            g.rules_url,
+            Some("https://github.com/klercke/protobot".to_string())
+        );
+    }
+
+    #[test]
+    fn set_details_change_one_value() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+
+        Guild::set_details(
+            &conn,
+            "8675309",
+            Some("1 billion dollars"),
+            Some("https://github.com/klercke/protobot"),
+        )
+        .unwrap();
+
+        Guild::set_details(
+            &conn,
+            "8675309",
+            Some("1 trillion dollars (inflation :())"),
+            None,
+        )
+        .unwrap();
+
+        let g = Guild::get(&conn, "8675309").unwrap().unwrap();
+
+        assert_eq!(
+            g.budget,
+            Some("1 trillion dollars (inflation :())".to_string())
+        );
+        assert_eq!(
+            g.rules_url,
+            Some("https://github.com/klercke/protobot".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_details_accepts_valid() {
+        assert!(validate_details(Some("$25"), Some("https://example.com/rules")).is_ok());
+    }
+
+    #[test]
+    fn validate_details_accepts_none() {
+        assert!(validate_details(None, None).is_ok());
+    }
+
+    #[test]
+    fn validate_details_rejects_long_budget() {
+        let budget = "a".repeat(MAX_BUDGET_LEN + 1);
+
+        assert!(validate_details(Some(&budget), None).is_err());
+    }
+
+    #[test]
+    fn validate_details_counts_characters_not_bytes() {
+        // "€" is 3 bytes but 1 character, so this is exactly at the limit
+        let budget = "€".repeat(MAX_BUDGET_LEN);
+
+        assert!(validate_details(Some(&budget), None).is_ok());
+    }
+
+    #[test]
+    fn validate_details_rejects_http_rules_url() {
+        assert!(validate_details(None, Some("http://example.com/rules")).is_err());
     }
 }

@@ -65,6 +65,13 @@ enum RegistrationState {
     PastDeadline,
 }
 
+/// The giftee a Santa was assigned
+#[derive(Debug, PartialEq, Eq)]
+struct Giftee {
+    user_id: String,
+    steam: Option<String>,
+}
+
 impl Participant {
     fn insert(db: &rusqlite::Connection, p: &Self) -> rusqlite::Result<i64> {
         db.execute(
@@ -993,6 +1000,72 @@ pub async fn santa_shuffle(
     Ok(())
 }
 
+/// Shows who you're the Secret Santa for
+#[poise::command(slash_command)]
+pub async fn santa_my_giftee(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("Command must be used in a server")?
+        .to_string();
+    let user_id = ctx.author().id.to_string();
+
+    info!(%guild_id, %user_id, "User requested their Secret Santa giftee");
+
+    let db = ctx.data().db.clone();
+    let (giftee, drawn) = {
+        let db = db.lock().await;
+
+        let giftee = get_giftee(&db, &guild_id, &user_id)?;
+        let drawn = has_assignments(&db, &guild_id)?;
+
+        (giftee, drawn)
+    };
+
+    let msg = match (giftee, drawn) {
+        (Some(g), _) => {
+            let wishlist = g.steam.as_deref().map_or_else(
+                || "They didn't provide a Steam wishlist link.".to_string(),
+                |steam| format!("Check out their [Steam wishlist]({}).", wishlist_url(steam)),
+            );
+            format!("Your giftee is <@{}>. {}", g.user_id, wishlist)
+        }
+        (None, false) => "Secret Santas for this server haven't been drawn yet.".to_string(),
+        (None, true) => "You weren't part of this server's Secret Santa.".to_string(),
+    };
+
+    let r = poise::CreateReply::default().content(msg).ephemeral(true);
+    ctx.send(r).await?;
+
+    Ok(())
+}
+
+/// Given a `user_id`, looks up who their giftee is (if giftees are assigned)
+fn get_giftee(
+    db: &rusqlite::Connection,
+    guild_id: &str,
+    user_id: &str,
+) -> rusqlite::Result<Option<Giftee>> {
+    db.query_row(
+        r"
+        SELECT g.user_id, g.steam
+        FROM santa_participants AS s
+        JOIN santa_assignments AS a
+            ON a.participant_id = s.id
+        JOIN santa_participants AS g
+            ON a.giftee_id = g.id
+        WHERE s.guild_id = ?1 AND s.user_id = ?2
+    ",
+        [guild_id, user_id],
+        |row| {
+            Ok(Giftee {
+                user_id: row.get(0)?,
+                steam: row.get(1)?,
+            })
+        },
+    )
+    .optional()
+}
+
 /// Draws Secret Santa pairs for a guild, replacing any existing ones.
 /// Returns the DM info for each pair and how many old pairs were replaced.
 fn draw_assignments(
@@ -1080,7 +1153,7 @@ async fn send_assignment_dms(
         let user_id = UserId::new(giver_id);
         match user_id.to_user(http).await {
             Ok(user) => {
-                let wishlist = format!("{giftee_steam}/wishlist");
+                let wishlist = wishlist_url(&giftee_steam);
                 let dm_message = serenity::CreateMessage::default()
                     .content(format!(
                         "🎅 {intro} <@{giftee_id}>. Check out their [Steam wishlist]({wishlist}) and run `/santa_info` in {guild_name} to check when your gift should be scheduled to arrive!"
@@ -1275,6 +1348,12 @@ pub async fn auto_draw_loop(http: Arc<serenity::Http>, db: Arc<Mutex<rusqlite::C
             }
         }
     }
+}
+
+/// Takes a user's Steam profile URL and returns their wishlist URL.
+fn wishlist_url(steam: &str) -> String {
+    let p = steam.trim_end_matches('/');
+    format!("{p}/wishlist")
 }
 
 #[cfg(test)]
@@ -1590,5 +1669,63 @@ mod tests {
 
         // The `auto_draw_attempted_at` field is still set on failure
         assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+    }
+
+    #[test]
+    fn get_giftee_before_draw() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        assert!(get_giftee(&conn, "8675309", "1").unwrap().is_none());
+    }
+
+    #[test]
+    fn get_giftee_after_draw() {
+        let mut conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        draw_assignments(&mut conn, "8675309").unwrap();
+
+        assert_eq!(
+            get_giftee(&conn, "8675309", "1").unwrap(),
+            Some(Giftee {
+                user_id: "2".to_string(),
+                steam: None
+            })
+        );
+    }
+
+    #[test]
+    fn get_giftee_not_participant() {
+        let mut conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        draw_assignments(&mut conn, "8675309").unwrap();
+
+        assert!(get_giftee(&conn, "8675309", "3").unwrap().is_none());
+    }
+
+    #[test]
+    fn wishlist_url_trimmed() {
+        assert_eq!(
+            wishlist_url("steamcommunity.com/id/fakename/"),
+            "steamcommunity.com/id/fakename/wishlist"
+        );
+        assert_eq!(
+            wishlist_url("steamcommunity.com/id/fakename"),
+            "steamcommunity.com/id/fakename/wishlist"
+        );
     }
 }

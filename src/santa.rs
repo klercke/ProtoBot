@@ -16,6 +16,9 @@ use tracing::{debug, error, info, warn};
 /// Longest budget text allowed, in characters.
 const MAX_BUDGET_LEN: usize = 50;
 
+/// Longest reminder window allowed, in hours (one week).
+const MAX_REMINDER_HOURS: i64 = 168;
+
 /// Represents a Secret Santa participant (SQLite table `santa_participants`)
 #[derive(Debug)]
 struct Participant {
@@ -47,6 +50,7 @@ struct Guild {
     gifting_event_id: Option<u64>,
     budget: Option<String>,
     rules_url: Option<String>,
+    reminder_hours: i64,
 }
 
 /// One Santa's assignment, ready to send as a DM
@@ -62,6 +66,14 @@ struct AssignmentDm {
 struct DueDraw {
     guild_id: String,
     channel_id: Option<u64>,
+}
+
+/// A guild whose Secret Santa gift reminders are due
+#[derive(Debug, PartialEq, Eq)]
+struct DueReminder {
+    guild_id: String,
+    channel_id: Option<u64>,
+    gift_at: i64,
 }
 
 /// Used to determine whether Secret Santa registrations can change in a server
@@ -132,7 +144,7 @@ impl Assignment {
 impl Guild {
     fn get(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Option<Self>> {
         let mut stmt = db.prepare(
-            r"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id, budget, rules_url
+            r"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id, budget, rules_url, reminder_hours
             FROM santa_guilds
             WHERE guild_id = ?1",
         )?;
@@ -147,6 +159,7 @@ impl Guild {
                 gifting_event_id: row.get(5)?,
                 budget: row.get(6)?,
                 rules_url: row.get(7)?,
+                reminder_hours: row.get(8)?,
             })
         });
 
@@ -397,7 +410,7 @@ pub async fn santa_create(
     Ok(())
 }
 
-/// Sets the drawing and/or gifting time for the Secret Santa.
+/// Sets the drawing time, gifting time and/or gift reminder for the Secret Santa.
 #[expect(
     clippy::too_many_lines,
     reason = "This will be split up during the v0.13 module refactor"
@@ -411,9 +424,13 @@ pub async fn santa_set_time(
     ctx: Context<'_>,
     #[description = "Drawing time (Unix timestamp)"] draw_at: Option<i64>,
     #[description = "Gifting time (Unix timestamp)"] gift_at: Option<i64>,
+    #[description = "Hours before gift time to remind Santas (0 turns reminders off)"]
+    remind_hours: Option<i64>,
 ) -> Result<(), Error> {
     let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
     let guild_id = discord_guild.to_string();
+
+    info!(%guild_id, user_id = %ctx.author().id, "Requested Secret Santa time update");
 
     let _ = ctx.channel_id().broadcast_typing(&ctx).await;
     ctx.defer_ephemeral().await?;
@@ -422,6 +439,7 @@ pub async fn santa_set_time(
     let db = db.lock().await;
 
     let Some(mut guild) = Guild::get(&db, &guild_id)? else {
+        info!(%guild_id, user_id = %ctx.author().id, "Tried to update Secret Santa times, but no event exists");
         ctx.say("No Secret Santa event exists for this server! Run `/santa_create` first.")
             .await?;
         return Ok(());
@@ -429,9 +447,36 @@ pub async fn santa_set_time(
 
     // Check for out-of-range timestamps before changing anything
     for ts in [draw_at, gift_at].into_iter().flatten() {
-        if ts != 0 {
-            event_start(ts)?;
+        if ts != 0 && event_start(ts).is_err() {
+            info!(%guild_id, user_id = %ctx.author().id, timestamp = ts, "Rejected Secret Santa time");
+            ctx.say("That timestamp is out of range. Use a Unix timestamp in seconds.")
+                .await?;
+            return Ok(());
         }
+    }
+
+    // Check the reminder window before changing anything
+    if let Some(hours) = remind_hours {
+        if !(0..=MAX_REMINDER_HOURS).contains(&hours) {
+            info!(
+                %guild_id,
+                user_id = %ctx.author().id,
+                remind_hours = hours,
+                "Rejected Secret Santa reminder time"
+            );
+            ctx.say(format!(
+                "Reminder hours must be between 0 and {MAX_REMINDER_HOURS}."
+            ))
+            .await?;
+            return Ok(());
+        }
+        guild.reminder_hours = hours;
+        info!(
+            %guild_id,
+            user_id = %ctx.author().id,
+            remind_hours = hours,
+            "Set Secret Santa reminder time"
+        );
     }
 
     let http = ctx.serenity_context().http.clone();
@@ -493,18 +538,24 @@ pub async fn santa_set_time(
         }
     }
 
-    // Write updated times to DB, and re-arm the automatic draw if the draw time changed
+    // Write updated values to the DB.
+    // Re-arm the automatic draw if the draw time changed.
+    // Re-arm the reminder if the gift time or reminder window changed.
     db.execute(
         "UPDATE santa_guilds
          SET draw_at = ?1,
              gift_at = ?2,
-             auto_draw_attempted_at = CASE WHEN ?4 THEN NULL ELSE auto_draw_attempted_at END
+             auto_draw_attempted_at = CASE WHEN ?4 THEN NULL ELSE auto_draw_attempted_at END,
+             reminder_hours = ?5,
+             reminder_sent_at = CASE WHEN ?6 THEN NULL ELSE reminder_sent_at END
          WHERE id = ?3",
         (
             &guild.drawing_time,
             &guild.gifting_time,
             &guild.id,
             draw_at.is_some(),
+            guild.reminder_hours,
+            gift_at.is_some() || remind_hours.is_some(),
         ),
     )?;
 
@@ -516,9 +567,14 @@ pub async fn santa_set_time(
         || "Not set".to_string(),
         |ts| format!("<t:{ts}:F> (<t:{ts}:R>)"),
     );
+    let reminder_display = if guild.reminder_hours == 0 {
+        "Off".to_string()
+    } else {
+        format!("{} hours before gift time", guild.reminder_hours)
+    };
 
     let mut msg = format!(
-        "Secret Santa times for this server:\n**Draw:** {draw_display}\n**Gift:** {gift_display}"
+        "Secret Santa times for this server:\n**Draw:** {draw_display}\n**Gift:** {gift_display}\n**Reminder:** {reminder_display}"
     );
     for note in notes {
         let _ = write!(msg, "\n-# {note}");
@@ -1321,7 +1377,7 @@ fn failed_dm_report(failed: &[u64]) -> Option<String> {
     Some(format!("Failed to DM the following users: {failed_list}. Please ask them to ensure they have DMs enabled from server members."))
 }
 
-/// Returns a Vec of `DueDraws` representing all Guilds who have a Santa Drawing set to happen at or
+/// Returns a Vec of `DueDraw`s representing all Guilds who have a Santa Drawing set to happen at or
 /// before `now`.
 fn due_draws(db: &rusqlite::Connection, now: i64) -> rusqlite::Result<Vec<DueDraw>> {
     let mut stmt = db.prepare(
@@ -1352,6 +1408,39 @@ fn due_draws(db: &rusqlite::Connection, now: i64) -> rusqlite::Result<Vec<DueDra
     Ok(due)
 }
 
+/// Returns a Vec of `DueReminder`s representing all guilds whose Santas are due a gift reminder.
+fn due_reminders(db: &rusqlite::Connection, now: i64) -> rusqlite::Result<Vec<DueReminder>> {
+    let mut stmt = db.prepare(
+        r"
+            SELECT g.guild_id, g.announce_channel_id, g.gift_at
+            FROM santa_guilds AS g
+            WHERE g.gift_at IS NOT NULL
+                AND g.reminder_hours > 0
+                AND g.reminder_sent_at IS NULL
+                AND g.gift_at - g.reminder_hours * 3600 <= ?1
+                AND g.gift_at > ?1
+                AND EXISTS(
+                    SELECT 1
+                    FROM santa_assignments AS a
+                    JOIN santa_participants AS p
+                        ON a.participant_id = p.id
+                    WHERE p.guild_id = g.guild_id
+                )
+        ",
+    )?;
+    let due = stmt
+        .query_map([now], |row| {
+            Ok(DueReminder {
+                guild_id: row.get(0)?,
+                channel_id: row.get(1)?,
+                gift_at: row.get(2)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(due)
+}
+
 /// Marks a guild's automatic draw as attempted, then draws its pairs.
 fn start_auto_draw(
     db: &mut rusqlite::Connection,
@@ -1366,6 +1455,46 @@ fn start_auto_draw(
     )?;
 
     let (dms, _) = draw_assignments(db, guild_id)?;
+
+    Ok(dms)
+}
+
+/// Marks a guild's reminders as sent, then returns each Santa's existing assignment.
+fn start_reminder(
+    db: &rusqlite::Connection,
+    guild_id: &str,
+    now: i64,
+) -> rusqlite::Result<Vec<AssignmentDm>> {
+    db.execute(
+        "UPDATE santa_guilds
+            SET reminder_sent_at = ?1
+        WHERE guild_id = ?2",
+        (now, guild_id),
+    )?;
+
+    let mut stmt = db.prepare(
+        r"
+        SELECT s.user_id, g.user_id, g.steam
+        FROM santa_participants AS s
+        JOIN santa_assignments AS a
+            ON a.participant_id = s.id
+        JOIN santa_participants AS g
+            ON a.giftee_id = g.id
+        WHERE s.guild_id = ?1
+        ",
+    )?;
+    let dms = stmt
+        .query_map([guild_id], |row| {
+            let giver: String = row.get(0)?;
+            let giftee: String = row.get(1)?;
+            let steam: Option<String> = row.get(2)?;
+            Ok(AssignmentDm {
+                giver_id: giver.parse().unwrap_or(0),
+                giftee_id: giftee.parse().unwrap_or(0),
+                giftee_steam: steam.unwrap_or_else(|| "No Steam URL".to_string()),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(dms)
 }
@@ -1417,7 +1546,13 @@ async fn run_auto_draw(http: &serenity::Http, db: &Mutex<rusqlite::Connection>, 
         Ok(id) => http
             .get_guild(serenity::GuildId::new(id))
             .await
-            .map_or_else(|_| "this server".into(), |g| g.name),
+            .map_or_else(
+                |e| {
+                    warn!(?e, %guild_id, "Could not look up server name");
+                    "this server".to_string()
+                },
+                |g| g.name,
+            ),
         Err(e) => {
             error!(?e, %guild_id, "Stored guild ID is not a valid number");
             "this server".to_string()
@@ -1442,16 +1577,93 @@ async fn run_auto_draw(http: &serenity::Http, db: &Mutex<rusqlite::Connection>, 
     announce(http, &guild_id, channel_id, &text).await;
 }
 
-/// Checks for due Secret Santa draws once a minute and runs them.
-pub async fn auto_draw_loop(http: Arc<serenity::Http>, db: Arc<Mutex<rusqlite::Connection>>) {
+/// Sends one guild's Secret Santa gift reminders and announces any failed DMs.
+async fn run_reminders(http: &serenity::Http, db: &Mutex<rusqlite::Connection>, due: DueReminder) {
+    let DueReminder {
+        guild_id,
+        channel_id,
+        gift_at,
+    } = due;
+
+    let result = {
+        let db = db.lock().await;
+        start_reminder(&db, &guild_id, Utc::now().timestamp())
+    };
+    // Lock released here, before any network calls
+
+    let dms = match result {
+        Ok(dms) => dms,
+        Err(e) => {
+            error!(?e, guild_id, "Secret Santa gift reminders failed");
+            return;
+        }
+    };
+
+    if dms.is_empty() {
+        warn!(
+            guild_id,
+            "Secret Santa reminders were due, but no assignments were found"
+        );
+        return;
+    }
+
+    info!(
+        guild_id,
+        santas = dms.len(),
+        "Sending Secret Santa gift reminders"
+    );
+
+    let guild_name = match guild_id.parse::<u64>() {
+        Ok(id) => http
+            .get_guild(serenity::GuildId::new(id))
+            .await
+            .map_or_else(
+                |e| {
+                    warn!(?e, %guild_id, "Could not look up server name");
+                    "this server".to_string()
+                },
+                |g| g.name,
+            ),
+        Err(e) => {
+            error!(?e, %guild_id, "Stored guild ID is not a valid number");
+            "this server".to_string()
+        }
+    };
+
+    let intro = format!(
+        "Reminder: Secret Santa gifts in {guild_name} are due <t:{gift_at}:F> (<t:{gift_at}:R>)! Your giftee is"
+    );
+    let failed = send_assignment_dms(http, &guild_id, &guild_name, &intro, dms).await;
+
+    info!(
+        guild_id,
+        failed = failed.len(),
+        "Sent Secret Santa gift reminders"
+    );
+
+    let mut text = format!(
+        "🎅 Reminder: Secret Santa gifts are due <t:{gift_at}:F> (<t:{gift_at}:R>)! Run `/santa_my_giftee` if you forgot who you're shopping for."
+    );
+    if let Some(report) = failed_dm_report(&failed) {
+        let _ = write!(text, "\n{report}");
+    }
+
+    announce(http, &guild_id, channel_id, &text).await;
+}
+
+/// Checks for due Secret Santa draws and gift reminders once a minute and runs them.
+pub async fn santa_scheduler(http: Arc<serenity::Http>, db: Arc<Mutex<rusqlite::Connection>>) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
     // If a tick takes too long, wait before the next one instead of firing back-to-back
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    info!("Started Secret Santa scheduler");
+
     loop {
         interval.tick().await;
 
+        // Draws run first, so pairs exist before any reminder due in the same tick
         let due = {
             let db = db.lock().await;
             due_draws(&db, Utc::now().timestamp())
@@ -1464,6 +1676,22 @@ pub async fn auto_draw_loop(http: Arc<serenity::Http>, db: Arc<Mutex<rusqlite::C
             Ok(due) => {
                 for draw in due {
                     run_auto_draw(&http, &db, draw).await;
+                }
+            }
+        }
+
+        let due = {
+            let db = db.lock().await;
+            due_reminders(&db, Utc::now().timestamp())
+        };
+
+        match due {
+            Err(e) => {
+                error!(?e, "Failed to check for due Secret Santa gift reminders");
+            }
+            Ok(due) => {
+                for reminder in due {
+                    run_reminders(&http, &db, reminder).await;
                 }
             }
         }
@@ -1498,6 +1726,13 @@ mod tests {
             steam: None,
         };
         Participant::insert(conn, &p).unwrap()
+    }
+
+    fn drawn_guild(conn: &mut rusqlite::Connection, gift_at: i64) {
+        Guild::create(conn, "8675309", None, Some(gift_at), None, None, None).unwrap();
+        add_participant(conn, "1");
+        add_participant(conn, "2");
+        draw_assignments(conn, "8675309").unwrap();
     }
 
     #[test]
@@ -1934,5 +2169,128 @@ mod tests {
     #[test]
     fn validate_details_rejects_http_rules_url() {
         assert!(validate_details(None, Some("http://example.com/rules")).is_err());
+    }
+
+    #[test]
+    fn new_guild_reminds_24_hours_before() {
+        let conn = setup();
+
+        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+
+        assert_eq!(
+            Guild::get(&conn, "8675309")
+                .unwrap()
+                .unwrap()
+                .reminder_hours,
+            24
+        );
+    }
+
+    #[test]
+    fn reminder_due_inside_window() {
+        let mut conn = setup();
+        let now = Utc::now().timestamp();
+        let gift_at = now + 3600;
+
+        drawn_guild(&mut conn, gift_at);
+
+        let expected = [DueReminder {
+            guild_id: "8675309".to_string(),
+            channel_id: None,
+            gift_at,
+        }];
+
+        assert_eq!(due_reminders(&conn, now).unwrap(), expected);
+    }
+
+    #[test]
+    fn reminder_not_due_before_window() {
+        let mut conn = setup();
+        let now = Utc::now().timestamp();
+
+        drawn_guild(&mut conn, now + 48 * 3600);
+
+        assert_eq!(
+            due_reminders(&conn, now).unwrap(),
+            Vec::<DueReminder>::new()
+        );
+    }
+
+    #[test]
+    fn reminder_not_due_after_gift_time() {
+        let mut conn = setup();
+        let now = Utc::now().timestamp();
+
+        drawn_guild(&mut conn, now - 60);
+
+        assert_eq!(
+            due_reminders(&conn, now).unwrap(),
+            Vec::<DueReminder>::new()
+        );
+    }
+
+    #[test]
+    fn reminder_not_due_before_draw() {
+        let conn = setup();
+        let now = Utc::now().timestamp();
+
+        Guild::create(&conn, "8675309", None, Some(now + 3600), None, None, None).unwrap();
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        assert_eq!(
+            due_reminders(&conn, now).unwrap(),
+            Vec::<DueReminder>::new()
+        );
+    }
+
+    #[test]
+    fn reminder_not_due_when_turned_off() {
+        let mut conn = setup();
+        let now = Utc::now().timestamp();
+
+        drawn_guild(&mut conn, now + 3600);
+        conn.execute(
+            "UPDATE santa_guilds SET reminder_hours = 0 WHERE guild_id = ?1",
+            ["8675309"],
+        )
+        .unwrap();
+
+        assert_eq!(
+            due_reminders(&conn, now).unwrap(),
+            Vec::<DueReminder>::new()
+        );
+    }
+
+    #[test]
+    fn reminder_sent_only_once() {
+        let mut conn = setup();
+        let now = Utc::now().timestamp();
+
+        drawn_guild(&mut conn, now + 3600);
+
+        let dms = start_reminder(&conn, "8675309", now).unwrap();
+
+        assert_eq!(dms.len(), 2);
+        assert_eq!(
+            due_reminders(&conn, now).unwrap(),
+            Vec::<DueReminder>::new()
+        );
+    }
+
+    #[test]
+    fn reminder_keeps_assignments() {
+        let mut conn = setup();
+        let now = Utc::now().timestamp();
+
+        drawn_guild(&mut conn, now + 3600);
+
+        let before_1 = get_giftee(&conn, "8675309", "1").unwrap();
+        let before_2 = get_giftee(&conn, "8675309", "2").unwrap();
+
+        start_reminder(&conn, "8675309", now).unwrap();
+
+        assert_eq!(get_giftee(&conn, "8675309", "1").unwrap(), before_1);
+        assert_eq!(get_giftee(&conn, "8675309", "2").unwrap(), before_2);
     }
 }

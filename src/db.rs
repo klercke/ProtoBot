@@ -8,6 +8,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_santa_auto_draw.sql"),
     include_str!("../migrations/0004_santa_budget_rules.sql"),
     include_str!("../migrations/0005_santa_reminders.sql"),
+    include_str!("../migrations/0006_santa_role.sql"),
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<(), Error> {

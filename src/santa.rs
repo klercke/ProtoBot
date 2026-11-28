@@ -51,6 +51,7 @@ struct Guild {
     budget: Option<String>,
     rules_url: Option<String>,
     reminder_hours: i64,
+    role_id: Option<u64>,
 }
 
 /// One Santa's assignment, ready to send as a DM
@@ -144,7 +145,7 @@ impl Assignment {
 impl Guild {
     fn get(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Option<Self>> {
         let mut stmt = db.prepare(
-            r"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id, budget, rules_url, reminder_hours
+            r"SELECT id, guild_id, draw_at, gift_at, drawing_event_id, gifting_event_id, budget, rules_url, reminder_hours, role_id
             FROM santa_guilds
             WHERE guild_id = ?1",
         )?;
@@ -160,6 +161,7 @@ impl Guild {
                 budget: row.get(6)?,
                 rules_url: row.get(7)?,
                 reminder_hours: row.get(8)?,
+                role_id: row.get(9)?,
             })
         });
 
@@ -231,6 +233,30 @@ impl Guild {
                 rules_url = COALESCE(?3, rules_url)
             WHERE guild_id = ?1",
             (guild_id, budget, rules_url),
+        )?;
+
+        Ok(())
+    }
+
+    /// Sets the ID of the role to be assigned to all Secret Santa participants in a server.
+    fn set_role(db: &rusqlite::Connection, guild_id: &str, role_id: u64) -> rusqlite::Result<()> {
+        db.execute(
+            "UPDATE santa_guilds
+            SET role_id = ?1
+            WHERE guild_id = ?2",
+            (&role_id, &guild_id),
+        )?;
+
+        Ok(())
+    }
+
+    /// Stops giving out a Secret Santa role in a server.
+    fn clear_role(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<()> {
+        db.execute(
+            "UPDATE santa_guilds
+            SET role_id = NULL
+            WHERE guild_id = ?1",
+            [guild_id],
         )?;
 
         Ok(())
@@ -868,6 +894,20 @@ pub async fn santa_delete(ctx: Context<'_>) -> Result<(), Error> {
         }
     }
 
+    // Take the Secret Santa role away from everyone before deleting the participants
+    if let Some(role_id) = guild.role_id {
+        let user_ids = participant_user_ids(&db, &guild_id)?;
+        let total = user_ids.len();
+        let mut failed = 0;
+        for user_id in user_ids {
+            if let Err(e) = remove_santa_role(&http, discord_guild, user_id, role_id).await {
+                warn!(?e, %guild_id, user_id, role_id, "Failed to remove Secret Santa role");
+                failed += 1;
+            }
+        }
+        info!(%guild_id, role_id, removed = total - failed, failed, "Removed Secret Santa role from participants");
+    }
+
     debug!(%guild_id, "Clearing Secret Santa rows from database");
     // Delete rows from DB
     db.execute("DELETE FROM santa_guilds WHERE guild_id = ?1", [&guild_id])?;
@@ -951,6 +991,9 @@ pub async fn santa_register(
         return Ok(());
     }
 
+    // Check if user needs a role assigned
+    let role_id = Guild::get(&db, &guild_id)?.and_then(|g| g.role_id);
+
     // Insert participant
     let participant = Participant {
         guild_id: guild_id.clone(),
@@ -962,10 +1005,36 @@ pub async fn santa_register(
 
     info!(%guild_id, %user_id, "User registered for Secret Santa");
 
-    ctx.say(format!(
-        "Successfully registered for Secret Santa! Your Steam profile: {steam_url}"
-    ))
-    .await?;
+    drop(db);
+
+    let mut msg =
+        format!("Successfully registered for Secret Santa! Your Steam profile: {steam_url}");
+
+    if let Some(role_id) = role_id {
+        match add_santa_role(ctx.http(), discord_guild, ctx.author().id.get(), role_id).await {
+            Ok(()) => {
+                info!(
+                    role_id,
+                    guild_id, user_id, "Assigned Secret Santa role to user"
+                );
+            }
+            Err(e) => {
+                warn!(
+                    role_id,
+                    guild_id,
+                    user_id,
+                    ?e,
+                    "Failed to assign Secret Santa role to user"
+                );
+                let _ = write!(
+                    msg,
+                    "\n-# I couldn't give you the Secret Santa role. Please let an admin know."
+                );
+            }
+        };
+    }
+
+    ctx.say(msg).await?;
 
     Ok(())
 }
@@ -1022,10 +1091,9 @@ pub async fn santa_list(ctx: Context<'_>) -> Result<(), Error> {
 /// Unregisters you from this server's Secret Santa
 #[poise::command(slash_command)]
 pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
-    let guild_id = ctx
-        .guild_id()
-        .ok_or("Command must be used in a server")?
-        .to_string();
+    let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
+    let guild_id = discord_guild.to_string();
+
     let user_id = ctx.author().id.to_string();
 
     let db = ctx.data().db.clone();
@@ -1063,23 +1131,47 @@ pub async fn santa_unregister(ctx: Context<'_>) -> Result<(), Error> {
         }
     }
 
+    // Check if the user needs a role removed
+    let role_id = Guild::get(&db, &guild_id)?.and_then(|g| g.role_id);
+
     let deleted = db.execute(
         "DELETE FROM santa_participants WHERE guild_id = ?1 AND user_id = ?2",
         [&guild_id, &user_id],
     )?;
 
+    drop(db);
+
     if deleted == 0 {
-        ctx.say("You were not registered for Secret Santa.").await?;
         info!(
             %guild_id,
             %user_id,
             "User tried to unregister from Secret Santa, but was not registered"
         );
-    } else {
-        ctx.say("You have been unregistered from Secret Santa.")
-            .await?;
-        info!(%guild_id, %user_id, "User unregistered from Secret Santa");
+        ctx.say("You were not registered for Secret Santa.").await?;
+        return Ok(());
     }
+
+    info!(%guild_id, %user_id, "User unregistered from Secret Santa");
+
+    let mut msg = "You have been unregistered from Secret Santa.".to_string();
+
+    // Take away the server's Secret Santa role if one is set
+    if let Some(role_id) = role_id {
+        match remove_santa_role(ctx.http(), discord_guild, ctx.author().id.get(), role_id).await {
+            Ok(()) => {
+                info!(%guild_id, %user_id, role_id, "Removed Secret Santa role from user");
+            }
+            Err(e) => {
+                warn!(?e, %guild_id, %user_id, role_id, "Failed to remove Secret Santa role from user");
+                let _ = write!(
+                    msg,
+                    "\n-# I couldn't remove your Secret Santa role. Please let an admin know."
+                );
+            }
+        }
+    }
+
+    ctx.say(msg).await?;
 
     Ok(())
 }
@@ -1704,6 +1796,298 @@ fn wishlist_url(steam: &str) -> String {
     format!("{p}/wishlist")
 }
 
+/// Returns the Discord user IDs of all Secret Santa participants in a guild.
+/// Skips any stored ID that isn't a valid number.
+fn participant_user_ids(db: &rusqlite::Connection, guild_id: &str) -> rusqlite::Result<Vec<u64>> {
+    let mut stmt = db.prepare("SELECT user_id FROM santa_participants WHERE guild_id = ?1")?;
+    let user_ids = stmt
+        .query_map([guild_id], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(user_ids
+        .into_iter()
+        .filter_map(|id| id.parse().ok())
+        .collect())
+}
+
+/// Gives a member the server's Secret Santa role.
+async fn add_santa_role(
+    http: &serenity::Http,
+    guild: serenity::GuildId,
+    user_id: u64,
+    role_id: u64,
+) -> Result<(), Error> {
+    http.add_member_role(
+        guild,
+        serenity::UserId::new(user_id),
+        serenity::RoleId::new(role_id),
+        Some("Registered for Secret Santa"),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Removes the server's Secret Santa role from a member.
+async fn remove_santa_role(
+    http: &serenity::Http,
+    guild: serenity::GuildId,
+    user_id: u64,
+    role_id: u64,
+) -> Result<(), Error> {
+    http.remove_member_role(
+        guild,
+        serenity::UserId::new(user_id),
+        serenity::RoleId::new(role_id),
+        Some("Unregistered from Secret Santa"),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Moves participants from one Secret Santa role to another.
+/// With no old role there's nothing to remove, and with no new role the old one is just removed.
+/// Returns the users whose primary change failed: the add when setting a role, the removal when clearing one.
+async fn swap_santa_role(
+    http: &serenity::Http,
+    guild: serenity::GuildId,
+    user_ids: &[u64],
+    old_role_id: Option<u64>,
+    new_role_id: Option<u64>,
+) -> Vec<u64> {
+    let guild_id = guild.get();
+    let mut failed = Vec::new();
+
+    for &user_id in user_ids {
+        if let Some(old) = old_role_id {
+            if let Err(e) = remove_santa_role(http, guild, user_id, old).await {
+                warn!(
+                    ?e,
+                    guild_id,
+                    user_id,
+                    role_id = old,
+                    "Failed to remove Secret Santa role"
+                );
+                if new_role_id.is_none() {
+                    failed.push(user_id);
+                }
+            }
+        }
+        if let Some(new) = new_role_id {
+            if let Err(e) = add_santa_role(http, guild, user_id, new).await {
+                warn!(
+                    ?e,
+                    guild_id,
+                    user_id,
+                    role_id = new,
+                    "Failed to give Secret Santa role"
+                );
+                failed.push(user_id);
+            }
+        }
+    }
+
+    failed
+}
+
+/// Checks that the bot can give out a role.
+/// The role must sit below the bot's highest role, and can't be @everyone or managed by an integration.
+async fn bot_can_manage_role(
+    ctx: Context<'_>,
+    guild: serenity::GuildId,
+    role: &serenity::Role,
+) -> Result<bool, Error> {
+    let bot = guild.member(ctx, ctx.framework().bot_id).await?;
+    let roles = guild.roles(ctx).await?;
+    let top = bot
+        .roles
+        .iter()
+        .filter_map(|id| roles.get(id))
+        .map(|r| r.position)
+        .max()
+        .unwrap_or(0);
+
+    Ok(top > role.position && !role.managed && role.id.get() != guild.get())
+}
+
+/// Sets the role given to everyone registered for this server's Secret Santa.
+#[poise::command(
+    slash_command,
+    default_member_permissions = "MANAGE_ROLES",
+    required_bot_permissions = "MANAGE_ROLES"
+)]
+pub async fn santa_set_role(
+    ctx: Context<'_>,
+    #[description = "Role to give everyone who registers for Secret Santa"] role: serenity::Role,
+) -> Result<(), Error> {
+    let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
+    let guild_id = discord_guild.to_string();
+    let role_id = role.id.get();
+
+    info!(
+        %guild_id,
+        user_id = %ctx.author().id,
+        role_id,
+        "Requested Secret Santa role update"
+    );
+
+    ctx.defer_ephemeral().await?;
+
+    // Check the role before saving anything
+    if !bot_can_manage_role(ctx, discord_guild, &role).await? {
+        info!(
+            %guild_id,
+            user_id = %ctx.author().id,
+            role_id,
+            "Rejected Secret Santa role the bot can't manage"
+        );
+        ctx.say("I can't give out that role. It can't be @everyone or a role managed by another app/bot, and my role has to be above it in Server Settings > Roles.")
+            .await?;
+        return Ok(());
+    }
+
+    // Save the role, and get the old role and everyone who already registered.
+    // The lock is released at the end of this block, before any Discord requests.
+    let found = {
+        let db = ctx.data().db.lock().await;
+        Guild::get(&db, &guild_id)?
+            .map(|guild| -> rusqlite::Result<_> {
+                Guild::set_role(&db, &guild_id, role_id)?;
+                Ok((participant_user_ids(&db, &guild_id)?, guild.role_id))
+            })
+            .transpose()?
+    };
+
+    let Some((user_ids, old_role_id)) = found else {
+        info!(
+            %guild_id,
+            user_id = %ctx.author().id,
+            "Tried to set a Secret Santa role, but no event exists"
+        );
+        ctx.say("No Secret Santa event exists for this server! Run `/santa_create` first.")
+            .await?;
+        return Ok(());
+    };
+
+    // Only remove the old role if it's actually being replaced
+    let old_role_id = old_role_id.filter(|&old| old != role_id);
+
+    // Move everyone who already registered from the old role to the new one
+    let http = &ctx.serenity_context().http;
+    let failed = swap_santa_role(http, discord_guild, &user_ids, old_role_id, Some(role_id)).await;
+    let given = user_ids.len() - failed.len();
+
+    info!(
+        %guild_id,
+        user_id = %ctx.author().id,
+        role_id,
+        old_role_id,
+        given,
+        failed = failed.len(),
+        "Set Secret Santa role"
+    );
+
+    let mut msg = format!(
+        "Set the Secret Santa role to <@&{role_id}>. Gave it to {given} of {} registered participants.",
+        user_ids.len()
+    );
+    if let Some(old) = old_role_id {
+        let _ = write!(msg, "\nRemoved <@&{old}> from everyone.");
+    }
+    if !failed.is_empty() {
+        let failed_list = failed
+            .iter()
+            .map(|id| format!("<@{id}>"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = write!(msg, "\nCouldn't give it to: {failed_list}");
+    }
+    ctx.say(msg).await?;
+
+    Ok(())
+}
+
+/// Removes the Secret Santa role from everyone and stops giving it out.
+#[poise::command(
+    slash_command,
+    default_member_permissions = "MANAGE_ROLES",
+    required_bot_permissions = "MANAGE_ROLES"
+)]
+pub async fn santa_clear_role(ctx: Context<'_>) -> Result<(), Error> {
+    let discord_guild = ctx.guild_id().ok_or("Command must be used in a server")?;
+    let guild_id = discord_guild.to_string();
+
+    info!(
+        %guild_id,
+        user_id = %ctx.author().id,
+        "Requested Secret Santa role removal"
+    );
+
+    ctx.defer_ephemeral().await?;
+
+    // Clear the role, and get the old role and everyone who registered.
+    // The lock is released at the end of this block, before any Discord requests.
+    let found = {
+        let db = ctx.data().db.lock().await;
+        Guild::get(&db, &guild_id)?
+            .map(|guild| -> rusqlite::Result<_> {
+                Guild::clear_role(&db, &guild_id)?;
+                Ok((participant_user_ids(&db, &guild_id)?, guild.role_id))
+            })
+            .transpose()?
+    };
+
+    let Some((user_ids, old_role_id)) = found else {
+        info!(
+            %guild_id,
+            user_id = %ctx.author().id,
+            "Tried to clear a Secret Santa role, but no event exists"
+        );
+        ctx.say("No Secret Santa event exists for this server! Run `/santa_create` first.")
+            .await?;
+        return Ok(());
+    };
+
+    let Some(old_role_id) = old_role_id else {
+        info!(
+            %guild_id,
+            user_id = %ctx.author().id,
+            "Tried to clear a Secret Santa role, but none was set"
+        );
+        ctx.say("This server doesn't have a Secret Santa role set.")
+            .await?;
+        return Ok(());
+    };
+
+    let http = &ctx.serenity_context().http;
+    let failed = swap_santa_role(http, discord_guild, &user_ids, Some(old_role_id), None).await;
+    let removed = user_ids.len() - failed.len();
+
+    info!(
+        %guild_id,
+        user_id = %ctx.author().id,
+        role_id = old_role_id,
+        removed,
+        failed = failed.len(),
+        "Cleared Secret Santa role"
+    );
+
+    let mut msg = format!(
+        "Stopped giving out <@&{old_role_id}>. Removed it from {removed} of {} registered participants.",
+        user_ids.len()
+    );
+    if !failed.is_empty() {
+        let failed_list = failed
+            .iter()
+            .map(|id| format!("<@{id}>"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = write!(msg, "\nCouldn't remove it from: {failed_list}");
+    }
+    ctx.say(msg).await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::db;
@@ -2270,5 +2654,100 @@ mod tests {
 
         assert_eq!(get_giftee(&conn, GUILD, "1").unwrap(), before_1);
         assert_eq!(get_giftee(&conn, GUILD, "2").unwrap(), before_2);
+    }
+
+    #[test]
+    fn new_guild_has_no_role() {
+        let conn = setup();
+
+        create_guild(&conn, None, None);
+
+        assert_eq!(Guild::get(&conn, GUILD).unwrap().unwrap().role_id, None);
+    }
+
+    #[test]
+    fn set_role_stores_role() {
+        let conn = setup();
+
+        create_guild(&conn, None, None);
+        Guild::set_role(&conn, GUILD, 1234).unwrap();
+
+        assert_eq!(
+            Guild::get(&conn, GUILD).unwrap().unwrap().role_id,
+            Some(1234)
+        );
+    }
+
+    #[test]
+    fn set_role_replaces_role() {
+        let conn = setup();
+
+        create_guild(&conn, None, None);
+        Guild::set_role(&conn, GUILD, 1234).unwrap();
+        Guild::set_role(&conn, GUILD, 5678).unwrap();
+
+        assert_eq!(
+            Guild::get(&conn, GUILD).unwrap().unwrap().role_id,
+            Some(5678)
+        );
+    }
+
+    #[test]
+    fn participant_user_ids_returns_registered() {
+        let conn = setup();
+
+        create_guild(&conn, None, None);
+        add_participant(&conn, "1");
+        add_participant(&conn, "2");
+
+        let mut ids = participant_user_ids(&conn, GUILD).unwrap();
+        ids.sort_unstable();
+
+        assert_eq!(ids, [1, 2]);
+    }
+
+    #[test]
+    fn participant_user_ids_ignores_other_guilds() {
+        let conn = setup();
+
+        create_guild(&conn, None, None);
+        add_participant(&conn, "1");
+
+        // A second server with its own participant
+        Guild::create(&conn, "42", None, None, None, None, None).unwrap();
+        Participant::insert(
+            &conn,
+            &Participant {
+                guild_id: "42".to_string(),
+                user_id: "2".to_string(),
+                registered_at: Utc::now().timestamp(),
+                steam: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(participant_user_ids(&conn, GUILD).unwrap(), [1]);
+    }
+
+    #[test]
+    fn participant_user_ids_skips_invalid_ids() {
+        let conn = setup();
+
+        create_guild(&conn, None, None);
+        add_participant(&conn, "1");
+        add_participant(&conn, "not-a-number");
+
+        assert_eq!(participant_user_ids(&conn, GUILD).unwrap(), [1]);
+    }
+
+    #[test]
+    fn clear_role_removes_role() {
+        let conn = setup();
+
+        create_guild(&conn, None, None);
+        Guild::set_role(&conn, GUILD, 1234).unwrap();
+        Guild::clear_role(&conn, GUILD).unwrap();
+
+        assert_eq!(Guild::get(&conn, GUILD).unwrap().unwrap().role_id, None);
     }
 }

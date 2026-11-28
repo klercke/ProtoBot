@@ -130,6 +130,8 @@ async fn main() {
                 santa::santa_shuffle(),
                 santa::santa_my_giftee(),
                 santa::santa_set_details(),
+                santa::santa_set_role(),
+                santa::santa_clear_role(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".into()),

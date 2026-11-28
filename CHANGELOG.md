@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.12.0](https://github.com/klercke/ProtoBot/compare/v0.11.0...v0.12.0) (2026-11-28)
+
+
+### Features
+
+* **santa:** add a budget and rules link to secret santa events ([#147](https://github.com/klercke/ProtoBot/issues/147)) ([333e637](https://github.com/klercke/ProtoBot/commit/333e6370905452f71fff82a177899b0a2ca2221c)), closes [#119](https://github.com/klercke/ProtoBot/issues/119)
+* **santa:** announce automatic draw results in the event's channel ([2fc05e8](https://github.com/klercke/ProtoBot/commit/2fc05e8fd2c6b9041a756f8f63741d08315cd445))
+* **santa:** block registration changes after the draw ([#137](https://github.com/klercke/ProtoBot/issues/137)) ([fb5c9af](https://github.com/klercke/ProtoBot/commit/fb5c9af7560523137411b7cc785d5f784f23ef86)), closes [#114](https://github.com/klercke/ProtoBot/issues/114)
+* **santa:** draw automatically at draw time ([2fc05e8](https://github.com/klercke/ProtoBot/commit/2fc05e8fd2c6b9041a756f8f63741d08315cd445))
+* **santa:** give secret santa participants a role ([#152](https://github.com/klercke/ProtoBot/issues/152)) ([b662752](https://github.com/klercke/ProtoBot/commit/b662752e367867c0d9340e3bc62cbbc5011e6817)), closes [#143](https://github.com/klercke/ProtoBot/issues/143)
+* **santa:** remind santas before gift time ([9c10a8f](https://github.com/klercke/ProtoBot/commit/9c10a8f8c23e65a34609d85dedbe18bd7229e912))
+* **santa:** report failed assignment dms ([#140](https://github.com/klercke/ProtoBot/issues/140)) ([00e5ea9](https://github.com/klercke/ProtoBot/commit/00e5ea9f703734b881c547fef1bc2c95e6266036)), closes [#116](https://github.com/klercke/ProtoBot/issues/116)
+* **santa:** require force to reshuffle ([#138](https://github.com/klercke/ProtoBot/issues/138)) ([f68aacd](https://github.com/klercke/ProtoBot/commit/f68aacd759bbf9c2e2aad67bdcade665618152dc)), closes [#115](https://github.com/klercke/ProtoBot/issues/115)
+* **santa:** require manage events for admin commands ([#133](https://github.com/klercke/ProtoBot/issues/133)) ([cd2ecc1](https://github.com/klercke/ProtoBot/commit/cd2ecc11901d1e3acf234bf1285161d57df20cf5)), closes [#64](https://github.com/klercke/ProtoBot/issues/64)
+* **santa:** show users their giftee on request ([02e9de6](https://github.com/klercke/ProtoBot/commit/02e9de6b34b3ae39dd650566c0a0cca0fa0852c7))
+
+
+### Bug Fixes
+
+* **santa:** build wishlist links correctly when a steam url ends in a slash ([02e9de6](https://github.com/klercke/ProtoBot/commit/02e9de6b34b3ae39dd650566c0a0cca0fa0852c7))
+* **santa:** explain out-of-range timestamps in /santa_set_time instead of failing ([9c10a8f](https://github.com/klercke/ProtoBot/commit/9c10a8f8c23e65a34609d85dedbe18bd7229e912))
+* **santa:** reference santa_guilds.guild id from participants ([#136](https://github.com/klercke/ProtoBot/issues/136)) ([ca64847](https://github.com/klercke/ProtoBot/commit/ca64847c32f2053f5b257829d19c3c9ef7611ae4)), closes [#135](https://github.com/klercke/ProtoBot/issues/135)
+* stop logging an error on startup when the logs directory already exists ([2fc05e8](https://github.com/klercke/ProtoBot/commit/2fc05e8fd2c6b9041a756f8f63741d08315cd445))
+
+
+### Documentation
+
+* **readme:** explain prod vs preview ([#153](https://github.com/klercke/ProtoBot/issues/153)) ([4352ce7](https://github.com/klercke/ProtoBot/commit/4352ce79359c7dc8cf5125ae0ada5e747bf2654d))
+
 ## [0.11.0](https://github.com/klercke/ProtoBot/compare/v0.10.1...v0.11.0) (2026-11-25)
 
 

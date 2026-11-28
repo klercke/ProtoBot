@@ -15,10 +15,11 @@ Free and open source forever.
 
 - **Dad jokes.**
     Tell ProtoBot you're hungry and it'll tell you it's dad.
-    Every time on Father's Day.
+    (Every time on Father's Day.)
 - **Secret Santa.**
-    Everyone signs up with their Steam profile, ProtoBot draws names and DMs each person their giftee with a link to their wishlist.
-    Draw and gift dates show up as Discord events so nobody forgets.
+    Everyone signs up with their Steam profile, and ProtoBot draws names at the draw time and DMs each person their giftee with a link to their wishlist.
+    Reminders go out before gifts are due and anyone who forgets can ask ProtoBot who they're shopping for.
+    Draw and gift dates show up as Discord events and participants can get a role so they're easy to find.
 - **Replies.**
     Wishes your friends a happy birthday when you do, and says you're welcome when you thank it.
 - **Commands.**
@@ -28,25 +29,45 @@ Free and open source forever.
 ## Usage
 
 ProtoBot uses slash commands.
-It also answers to `!` and "hey protobot":
 
 ```
 /help
-!help
-hey protobot, help
 ```
 
 ### Secret Santa
 
-An admin runs `/santa_create` and sets dates with `/santa_set_time`.
-Everyone else joins with `/santa_register` and their Steam profile URL.
-When it's time, an admin runs `/santa_shuffle` and ProtoBot sends out the DMs.
+An admin runs `/santa_create` with the draw and gift times, plus an optional budget and rules link.
+Times can be changed later with `/santa_set_time`, and the budget and rules with `/santa_set_details`.
+To give everyone who signs up a role, use `/santa_set_role` (and `/santa_clear_role` to stop).
+
+Everyone else joins with `/santa_register` and their Steam profile URL, and can check the details with `/santa_info`.
+At the draw time, ProtoBot draws names and DMs everyone their giftee.
+An admin can also draw early with `/santa_shuffle`.
+ProtoBot sends a reminder 24 hours before gifts are due, which admins can change with the `remind_hours` option on `/santa_set_time`.
+Forgot who you're shopping for? `/santa_my_giftee` will tell you, and only you can see the answer.
 
 Make sure your DMs are open to server members or you won't get your giftee.
 
 ## Roadmap
 
 See what's planned on the [roadmap](https://github.com/users/klercke/projects/1).
+
+## Preview vs. Production
+
+There are currently two versions of ProtoBot that are publicly available: **ProtoBot Preview** and **ProtoBot Production** (or as I like to call it, ProdoBot).
+**ProtoBot Production** is usually just called **ProtoBot**.
+
+**ProtoBot Preview** is built from `main` on every change.
+The ProtoBot project uses fairly robust CI, lints, checks, and automated tests, plus manual testing where necessary, so these builds should be free of any catastrophic bugs, but they should **NOT** be considered stable.
+
+**ProtoBot Production** runs the [latest release](https://github.com/klercke/ProtoBot/releases/latest) build.
+Changes are tested in the real world (via ProtoBot Preview) before being released, so ProtoBot Production is ideally more stable.
+
+The deployments for both versions of ProtoBot are done via GitHub Actions and are [publicly auditable](https://github.com/klercke/ProtoBot/actions).
+
+Common to any instance of ProtoBot is the fact that this is **pre-1.0 code** from a **novice** Rust programmer.
+ProtoBot is my longest-running project and I take a great deal of care to make it as stable as possible (I use Preview every day in a server with over 100 people!), but there will be bugs from time to time.
+If you do discover any bugs or missing functionality, please report them via a [GitHub issue](https://github.com/klercke/ProtoBot/issues/new/choose).
 
 ## Self-hosting
 
@@ -102,7 +123,7 @@ Podman will also work.
 
 > [!TIP]
 > When using the container image in a production environment, it is recommended to pin to a version tag instead of `latest`:
-> `ghcr.io/klercke/protobot:0.11`
+> `ghcr.io/klercke/protobot:X.Y`
 
 > [!IMPORTANT]
 > If ProtoBot fails to start with `Failed to connect to SQLite database` and you're using the static binary or Nix release, make sure you created the `data/` directory in the same directory you're running ProtoBot from.

@@ -1710,6 +1710,10 @@ mod tests {
 
     use super::*;
 
+    /// Guild ID used by every test
+    const GUILD: &str = "8675309";
+
+    /// Prepares a connection to a virtual in-memory database
     fn setup() -> rusqlite::Connection {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
 
@@ -1718,9 +1722,10 @@ mod tests {
         conn
     }
 
+    /// Adds a participant into a simulated Secret Santa event
     fn add_participant(conn: &rusqlite::Connection, user_id: &str) -> i64 {
         let p = Participant {
-            guild_id: String::from("8675309"),
+            guild_id: String::from(GUILD),
             user_id: String::from(user_id),
             registered_at: Utc::now().timestamp(),
             steam: None,
@@ -1728,11 +1733,17 @@ mod tests {
         Participant::insert(conn, &p).unwrap()
     }
 
-    fn drawn_guild(conn: &mut rusqlite::Connection, gift_at: i64) {
-        Guild::create(conn, "8675309", None, Some(gift_at), None, None, None).unwrap();
+    /// Creates the test guild with optional draw and gift times
+    fn create_guild(conn: &rusqlite::Connection, draw_at: Option<i64>, gift_at: Option<i64>) {
+        Guild::create(conn, GUILD, draw_at, gift_at, None, None, None).unwrap();
+    }
+
+    /// Creates the test guild with two participants and draws their pairs
+    fn drawn_guild(conn: &mut rusqlite::Connection, gift_at: Option<i64>) {
+        create_guild(conn, None, gift_at);
         add_participant(conn, "1");
         add_participant(conn, "2");
-        draw_assignments(conn, "8675309").unwrap();
+        draw_assignments(conn, GUILD).unwrap();
     }
 
     #[test]
@@ -1740,7 +1751,7 @@ mod tests {
         let conn = setup();
 
         assert_eq!(
-            registration_state(&conn, "8675309").unwrap(),
+            registration_state(&conn, GUILD).unwrap(),
             RegistrationState::NoEvent
         );
     }
@@ -1749,10 +1760,10 @@ mod tests {
     fn guild_event_open() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         assert_eq!(
-            registration_state(&conn, "8675309").unwrap(),
+            registration_state(&conn, GUILD).unwrap(),
             RegistrationState::Open
         );
     }
@@ -1761,19 +1772,10 @@ mod tests {
     fn guild_event_deadline_passed() {
         let conn = setup();
 
-        Guild::create(
-            &conn,
-            "8675309",
-            Some(Utc::now().timestamp() - 60),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        create_guild(&conn, Some(Utc::now().timestamp() - 60), None);
 
         assert_eq!(
-            registration_state(&conn, "8675309").unwrap(),
+            registration_state(&conn, GUILD).unwrap(),
             RegistrationState::PastDeadline
         );
     }
@@ -1782,7 +1784,7 @@ mod tests {
     fn guild_event_drawn() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         let p1_id = add_participant(&conn, "1");
         let p2_id = add_participant(&conn, "2");
@@ -1797,7 +1799,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            registration_state(&conn, "8675309").unwrap(),
+            registration_state(&conn, GUILD).unwrap(),
             RegistrationState::AlreadyDrawn
         );
     }
@@ -1806,19 +1808,19 @@ mod tests {
     fn no_assignments_before_draw() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         add_participant(&conn, "1");
         add_participant(&conn, "2");
 
-        assert!(!has_assignments(&conn, "8675309").unwrap());
+        assert!(!has_assignments(&conn, GUILD).unwrap());
     }
 
     #[test]
     fn assignments_after_draw() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         let p1_id = add_participant(&conn, "1");
         let p2_id = add_participant(&conn, "2");
@@ -1832,7 +1834,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(has_assignments(&conn, "8675309").unwrap());
+        assert!(has_assignments(&conn, GUILD).unwrap());
     }
 
     #[test]
@@ -1855,12 +1857,12 @@ mod tests {
     fn draw_pairs_everyone_once() {
         let mut conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
         add_participant(&conn, "1");
         add_participant(&conn, "2");
         add_participant(&conn, "3");
 
-        let (dms, replaced) = draw_assignments(&mut conn, "8675309").unwrap();
+        let (dms, replaced) = draw_assignments(&mut conn, GUILD).unwrap();
 
         assert_eq!(dms.len(), 3);
         assert_eq!(replaced, 0);
@@ -1881,10 +1883,10 @@ mod tests {
     fn draw_needs_two_participants() {
         let mut conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
         add_participant(&conn, "1");
 
-        let (dms, replaced) = draw_assignments(&mut conn, "8675309").unwrap();
+        let (dms, replaced) = draw_assignments(&mut conn, GUILD).unwrap();
 
         assert!(dms.is_empty());
         assert_eq!(replaced, 0);
@@ -1894,13 +1896,13 @@ mod tests {
     fn draw_replaces_existing() {
         let mut conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
         add_participant(&conn, "1");
         add_participant(&conn, "2");
         add_participant(&conn, "3");
 
-        draw_assignments(&mut conn, "8675309").unwrap();
-        let (dms, replaced) = draw_assignments(&mut conn, "8675309").unwrap();
+        draw_assignments(&mut conn, GUILD).unwrap();
+        let (dms, replaced) = draw_assignments(&mut conn, GUILD).unwrap();
 
         assert_eq!(dms.len(), 3);
         assert_eq!(replaced, 3);
@@ -1910,12 +1912,10 @@ mod tests {
     fn draw_date_due_guild_returned() {
         let conn = setup();
 
-        let draw_at = Some(Utc::now().timestamp() - 600);
-
-        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+        create_guild(&conn, Some(Utc::now().timestamp() - 600), None);
 
         let expected = [DueDraw {
-            guild_id: "8675309".to_string(),
+            guild_id: GUILD.to_string(),
             channel_id: None,
         }];
 
@@ -1926,131 +1926,117 @@ mod tests {
     fn draw_date_future_guild_not_returned() {
         let conn = setup();
 
-        let draw_at = Some(Utc::now().timestamp() + 600);
+        create_guild(&conn, Some(Utc::now().timestamp() + 600), None);
 
-        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
-
-        let expected: Vec<DueDraw> = Vec::new();
-
-        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+        assert_eq!(
+            due_draws(&conn, Utc::now().timestamp()).unwrap(),
+            Vec::<DueDraw>::new()
+        );
     }
 
     #[test]
     fn draw_date_none_guild_not_returned() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
-        let expected: Vec<DueDraw> = Vec::new();
-
-        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+        assert_eq!(
+            due_draws(&conn, Utc::now().timestamp()).unwrap(),
+            Vec::<DueDraw>::new()
+        );
     }
 
     #[test]
     fn already_drawn_guild_not_returned() {
         let mut conn = setup();
 
-        let draw_at = Some(Utc::now().timestamp() - 600);
-
-        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
-
+        create_guild(&conn, Some(Utc::now().timestamp() - 600), None);
         add_participant(&conn, "1");
         add_participant(&conn, "2");
+        draw_assignments(&mut conn, GUILD).unwrap();
 
-        draw_assignments(&mut conn, "8675309").unwrap();
-
-        let expected: Vec<DueDraw> = Vec::new();
-
-        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+        assert_eq!(
+            due_draws(&conn, Utc::now().timestamp()).unwrap(),
+            Vec::<DueDraw>::new()
+        );
     }
 
     #[test]
     fn already_attempted_draw_guild_not_returned() {
         let conn = setup();
 
-        let draw_at = Some(Utc::now().timestamp() - 600);
-
-        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
+        create_guild(&conn, Some(Utc::now().timestamp() - 600), None);
 
         conn.execute(
             "UPDATE santa_guilds
                 SET auto_draw_attempted_at = ?1
             WHERE guild_id = ?2",
-            (Utc::now().timestamp() - 300, "8675309"),
+            (Utc::now().timestamp() - 300, GUILD),
         )
         .unwrap();
 
-        let expected: Vec<DueDraw> = Vec::new();
-
-        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+        assert_eq!(
+            due_draws(&conn, Utc::now().timestamp()).unwrap(),
+            Vec::<DueDraw>::new()
+        );
     }
 
     #[test]
     fn auto_draw_works_once() {
         let mut conn = setup();
 
-        let draw_at = Some(Utc::now().timestamp() - 600);
-
-        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
-
+        create_guild(&conn, Some(Utc::now().timestamp() - 600), None);
         add_participant(&conn, "1");
         add_participant(&conn, "2");
 
-        let dms = start_auto_draw(&mut conn, "8675309", Utc::now().timestamp()).unwrap();
+        let dms = start_auto_draw(&mut conn, GUILD, Utc::now().timestamp()).unwrap();
 
         assert_eq!(dms.len(), 2);
-
-        let expected: Vec<DueDraw> = Vec::new();
-
-        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+        assert_eq!(
+            due_draws(&conn, Utc::now().timestamp()).unwrap(),
+            Vec::<DueDraw>::new()
+        );
     }
 
     #[test]
     fn auto_draw_quits_one_participant() {
         let mut conn = setup();
 
-        let draw_at = Some(Utc::now().timestamp() - 600);
-
-        Guild::create(&conn, "8675309", draw_at, None, None, None, None).unwrap();
-
+        create_guild(&conn, Some(Utc::now().timestamp() - 600), None);
         add_participant(&conn, "1");
 
-        let dms = start_auto_draw(&mut conn, "8675309", Utc::now().timestamp()).unwrap();
+        let dms = start_auto_draw(&mut conn, GUILD, Utc::now().timestamp()).unwrap();
 
         // No DMs should be sent when there is only one participant
         assert!(dms.is_empty());
 
-        let expected: Vec<DueDraw> = Vec::new();
-
         // The `auto_draw_attempted_at` field is still set on failure
-        assert_eq!(due_draws(&conn, Utc::now().timestamp()).unwrap(), expected);
+        assert_eq!(
+            due_draws(&conn, Utc::now().timestamp()).unwrap(),
+            Vec::<DueDraw>::new()
+        );
     }
 
     #[test]
     fn get_giftee_before_draw() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         add_participant(&conn, "1");
         add_participant(&conn, "2");
 
-        assert!(get_giftee(&conn, "8675309", "1").unwrap().is_none());
+        assert!(get_giftee(&conn, GUILD, "1").unwrap().is_none());
     }
 
     #[test]
     fn get_giftee_after_draw() {
         let mut conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
-
-        add_participant(&conn, "1");
-        add_participant(&conn, "2");
-
-        draw_assignments(&mut conn, "8675309").unwrap();
+        drawn_guild(&mut conn, None);
 
         assert_eq!(
-            get_giftee(&conn, "8675309", "1").unwrap(),
+            get_giftee(&conn, GUILD, "1").unwrap(),
             Some(Giftee {
                 user_id: "2".to_string(),
                 steam: None
@@ -2062,14 +2048,9 @@ mod tests {
     fn get_giftee_not_participant() {
         let mut conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        drawn_guild(&mut conn, None);
 
-        add_participant(&conn, "1");
-        add_participant(&conn, "2");
-
-        draw_assignments(&mut conn, "8675309").unwrap();
-
-        assert!(get_giftee(&conn, "8675309", "3").unwrap().is_none());
+        assert!(get_giftee(&conn, GUILD, "3").unwrap().is_none());
     }
 
     #[test]
@@ -2088,17 +2069,17 @@ mod tests {
     fn set_details_stores_values() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         Guild::set_details(
             &conn,
-            "8675309",
+            GUILD,
             Some("1 billion dollars"),
             Some("https://github.com/klercke/protobot"),
         )
         .unwrap();
 
-        let g = Guild::get(&conn, "8675309").unwrap().unwrap();
+        let g = Guild::get(&conn, GUILD).unwrap().unwrap();
 
         assert_eq!(g.budget, Some("1 billion dollars".to_string()));
         assert_eq!(
@@ -2111,11 +2092,11 @@ mod tests {
     fn set_details_change_one_value() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         Guild::set_details(
             &conn,
-            "8675309",
+            GUILD,
             Some("1 billion dollars"),
             Some("https://github.com/klercke/protobot"),
         )
@@ -2123,13 +2104,13 @@ mod tests {
 
         Guild::set_details(
             &conn,
-            "8675309",
+            GUILD,
             Some("1 trillion dollars (inflation :())"),
             None,
         )
         .unwrap();
 
-        let g = Guild::get(&conn, "8675309").unwrap().unwrap();
+        let g = Guild::get(&conn, GUILD).unwrap().unwrap();
 
         assert_eq!(
             g.budget,
@@ -2175,13 +2156,10 @@ mod tests {
     fn new_guild_reminds_24_hours_before() {
         let conn = setup();
 
-        Guild::create(&conn, "8675309", None, None, None, None, None).unwrap();
+        create_guild(&conn, None, None);
 
         assert_eq!(
-            Guild::get(&conn, "8675309")
-                .unwrap()
-                .unwrap()
-                .reminder_hours,
+            Guild::get(&conn, GUILD).unwrap().unwrap().reminder_hours,
             24
         );
     }
@@ -2192,10 +2170,10 @@ mod tests {
         let now = Utc::now().timestamp();
         let gift_at = now + 3600;
 
-        drawn_guild(&mut conn, gift_at);
+        drawn_guild(&mut conn, Some(gift_at));
 
         let expected = [DueReminder {
-            guild_id: "8675309".to_string(),
+            guild_id: GUILD.to_string(),
             channel_id: None,
             gift_at,
         }];
@@ -2208,7 +2186,7 @@ mod tests {
         let mut conn = setup();
         let now = Utc::now().timestamp();
 
-        drawn_guild(&mut conn, now + 48 * 3600);
+        drawn_guild(&mut conn, Some(now + 48 * 3600));
 
         assert_eq!(
             due_reminders(&conn, now).unwrap(),
@@ -2221,7 +2199,7 @@ mod tests {
         let mut conn = setup();
         let now = Utc::now().timestamp();
 
-        drawn_guild(&mut conn, now - 60);
+        drawn_guild(&mut conn, Some(now - 60));
 
         assert_eq!(
             due_reminders(&conn, now).unwrap(),
@@ -2234,7 +2212,7 @@ mod tests {
         let conn = setup();
         let now = Utc::now().timestamp();
 
-        Guild::create(&conn, "8675309", None, Some(now + 3600), None, None, None).unwrap();
+        create_guild(&conn, None, Some(now + 3600));
         add_participant(&conn, "1");
         add_participant(&conn, "2");
 
@@ -2249,10 +2227,10 @@ mod tests {
         let mut conn = setup();
         let now = Utc::now().timestamp();
 
-        drawn_guild(&mut conn, now + 3600);
+        drawn_guild(&mut conn, Some(now + 3600));
         conn.execute(
             "UPDATE santa_guilds SET reminder_hours = 0 WHERE guild_id = ?1",
-            ["8675309"],
+            [GUILD],
         )
         .unwrap();
 
@@ -2267,9 +2245,9 @@ mod tests {
         let mut conn = setup();
         let now = Utc::now().timestamp();
 
-        drawn_guild(&mut conn, now + 3600);
+        drawn_guild(&mut conn, Some(now + 3600));
 
-        let dms = start_reminder(&conn, "8675309", now).unwrap();
+        let dms = start_reminder(&conn, GUILD, now).unwrap();
 
         assert_eq!(dms.len(), 2);
         assert_eq!(
@@ -2283,14 +2261,14 @@ mod tests {
         let mut conn = setup();
         let now = Utc::now().timestamp();
 
-        drawn_guild(&mut conn, now + 3600);
+        drawn_guild(&mut conn, Some(now + 3600));
 
-        let before_1 = get_giftee(&conn, "8675309", "1").unwrap();
-        let before_2 = get_giftee(&conn, "8675309", "2").unwrap();
+        let before_1 = get_giftee(&conn, GUILD, "1").unwrap();
+        let before_2 = get_giftee(&conn, GUILD, "2").unwrap();
 
-        start_reminder(&conn, "8675309", now).unwrap();
+        start_reminder(&conn, GUILD, now).unwrap();
 
-        assert_eq!(get_giftee(&conn, "8675309", "1").unwrap(), before_1);
-        assert_eq!(get_giftee(&conn, "8675309", "2").unwrap(), before_2);
+        assert_eq!(get_giftee(&conn, GUILD, "1").unwrap(), before_1);
+        assert_eq!(get_giftee(&conn, GUILD, "2").unwrap(), before_2);
     }
 }
